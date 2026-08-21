@@ -1,8 +1,8 @@
 import logging
+import re
 import time
-from decimal import Decimal
-from typing import Dict, Any, List, Optional, TypedDict
-from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional, TypedDict, Tuple
+from datetime import datetime, timezone, date, timedelta
 from sqlalchemy.orm import Session
 
 from app.agents.transaction_agent import TransactionAnalysisAgent
@@ -14,12 +14,11 @@ from app.agents.forecasting_agent import ForecastingAgent
 from app.agents.savings_agent import SavingsOpportunityAgent
 from app.agents.cost_optimization_agent import CostOptimizationAgent
 from app.agents.what_if_agent import WhatIfSimulationAgent
-from app.agents.approval_agent import ApprovalAgent
-from app.agents.report_agent import ReportAgent
 from app.services.rag_service import FinanceRAGService
 from app.core.llm import llm_client
-from app.models.future_ai import AgentRun, AgentMessage
+from app.models.future_ai import AgentRun
 from app.models.company import Company
+from app.models.department import Department
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +31,7 @@ class AgentState(TypedDict, total=False):
     company_id: int
     user_id: Optional[int]
     currency: str
+    period_label: str
     selected_agents: List[str]
     executed_tools: List[str]
     transaction_data: Optional[Dict[str, Any]]
@@ -52,25 +52,39 @@ class AgentState(TypedDict, total=False):
 
 def _currency_symbol(code: str) -> str:
     """Return currency symbol for common currency codes."""
-    return {"USD": "$", "INR": "₹", "EUR": "€", "GBP": "£", "JPY": "¥", "AUD": "A$", "CAD": "C$"}.get(
-        code.upper(), code
-    )
+    return {
+        "USD": "$", "INR": "₹", "EUR": "€", "GBP": "£",
+        "JPY": "¥", "AUD": "A$", "CAD": "C$",
+    }.get(code.upper(), code)
 
 
 class SupervisorAgent:
     """
     LangGraph-compatible Supervisor Orchestrator.
-    Analyses intent, executes specialized subagents selectively, passes structured state,
-    synthesises final responses, and logs agent execution for auditing.
 
-    Routing guarantees:
-    - FINANCIAL_METRIC queries → TransactionAgent only (no optimisation agents)
-    - COST_OPTIMIZATION queries → SavingsAgent + CostOptimizationAgent + supporting agents
-    - Citations, evidence cards, and suggested actions are dynamically built from
-      agents that were *actually* executed. No static/fabricated data is included.
+    Routing priorities (first match wins):
+    1. What-If  – before optimization ("what if we reduce…" contains "reduce")
+    2. Cost Optimization
+    3. Direct Financial Metrics  – after optimization ("how can we reduce total expenses?" must not hit metric)
+    4. Anomaly Detection
+    5. Forecasting
+    6. Subscription Analysis
+    7. Vendor Analysis
+    8. Budget Analysis
+    9. Document RAG
+    10. Safe default → TransactionAgent
+
+    Guarantees:
+    - Financial metric queries never invoke Gemini for the authoritative number.
+    - No hardcoded savings figures.
+    - No hardcoded what-if department adjustments.
+    - Citations, evidence cards, and suggested actions are built only from
+      agents that were actually executed.
+    - Every DB query is scoped to self.company_id.
     """
 
-    # ── Intent keyword sets ──────────────────────────────────────────────────
+    # ── Intent keyword sets ───────────────────────────────────────────────────
+
     _FINANCIAL_METRIC_PHRASES = frozenset([
         "total expenses", "total expense", "total spending", "total spend",
         "how much did we spend", "how much have we spent", "how much did we pay",
@@ -127,11 +141,12 @@ class SupervisorAgent:
         "compliance", "regulation", "uploaded document",
     ])
 
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
     def __init__(self, db: Session, company_id: int, user_id: Optional[int] = None):
         self.db = db
         self.company_id = company_id
         self.user_id = user_id
-        # Resolve company currency once at construction time
         company = db.query(Company).filter(Company.id == company_id).first()
         self.currency_code: str = (company.currency or "USD") if company else "USD"
         self.currency_sym: str = _currency_symbol(self.currency_code)
@@ -141,18 +156,19 @@ class SupervisorAgent:
         prompt: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
-        """
-        Orchestrate multi-agent execution pipeline.
-        """
+        """Orchestrate multi-agent execution pipeline."""
         start_time = time.time()
         p_lower = prompt.lower()
 
-        # Initialise structured agent state
+        # Resolve time period from prompt
+        start_date, end_date, period_label = self._resolve_period(p_lower)
+
         state: AgentState = {
             "user_prompt": prompt,
             "company_id": self.company_id,
             "user_id": self.user_id,
             "currency": self.currency_code,
+            "period_label": period_label,
             "selected_agents": [],
             "executed_tools": [],
             "evidence_cards": [],
@@ -161,11 +177,14 @@ class SupervisorAgent:
             "final_response": "",
         }
 
-        # ── 1. Intent Classification & Selective Routing ─────────────────────
+        # ── 1. Intent Classification & Selective Routing ──────────────────────
         selected_agents = self._route_intent(p_lower)
         state["selected_agents"] = selected_agents
+        is_metric_query = self._is_financial_metric_query(p_lower)
+        is_optimization_query = self._is_optimization_query(p_lower)
 
-        # ── 2. Execute Selected Specialised Agents ───────────────────────────
+        # ── 2. Execute Selected Specialised Agents ────────────────────────────
+
         if "SubscriptionAgent" in selected_agents:
             try:
                 sub_agent = SubscriptionOptimizationAgent(self.db, self.company_id)
@@ -186,12 +205,13 @@ class SupervisorAgent:
                         ),
                         "type": "savings",
                     })
+                    unused_seats = sum(
+                        s.get("unused_licenses", 0)
+                        for s in state["subscription_data"].get("subscriptions", [])
+                    )
                     state["suggested_actions"].append({
-                        "action": "CANCEL_UNUSED_SEATS",
-                        "label": (
-                            f"Deprovision {sum(s['unused_licenses'] for s in state['subscription_data'].get('subscriptions', []))} "
-                            "Unused SaaS Seats"
-                        ),
+                        "action": "REVIEW_UNUSED_SEATS",
+                        "label": f"Review {unused_seats} Unused SaaS Seats",
                         "savings": pot_sav,
                     })
             except Exception as exc:
@@ -279,8 +299,15 @@ class SupervisorAgent:
             if "CostOptimizationAgent" in selected_agents:
                 try:
                     opt_agent = CostOptimizationAgent(self.db, self.company_id)
-                    target = self._extract_amount(prompt) or 50000.0
-                    state["optimization_plan"] = opt_agent.generate_plan(target_savings_amount=target)
+                    target = self._extract_money_amount(prompt)
+                    # Do NOT use a silent fallback target.
+                    # generate_plan() handles None target gracefully.
+                    if target is not None:
+                        state["optimization_plan"] = opt_agent.generate_plan(
+                            target_savings_amount=target
+                        )
+                    else:
+                        state["optimization_plan"] = opt_agent.generate_plan()
                     state["executed_tools"].append("synthesize_optimization_plan")
                     state["citations"].append({
                         "source": "Cost Optimisation Planner",
@@ -291,10 +318,20 @@ class SupervisorAgent:
 
         if "WhatIfAgent" in selected_agents:
             try:
-                wi_agent = WhatIfSimulationAgent(self.db, self.company_id)
-                state["what_if_results"] = wi_agent.simulate(
-                    department_spend_adjustments={"Marketing": -0.15, "Engineering": -0.10}
-                )
+                adjustments = self._build_what_if_adjustments(prompt)
+                if not adjustments:
+                    state["what_if_results"] = {
+                        "status": "INSUFFICIENT_INPUT",
+                        "message": (
+                            "Please specify a department and a percentage to simulate, for example: "
+                            "'What if Marketing spending decreases by 20%?'"
+                        ),
+                    }
+                else:
+                    wi_agent = WhatIfSimulationAgent(self.db, self.company_id)
+                    state["what_if_results"] = wi_agent.simulate(
+                        department_spend_adjustments=adjustments
+                    )
                 state["executed_tools"].append("run_what_if_simulation")
                 state["citations"].append({
                     "source": "What-If Simulation Engine",
@@ -315,21 +352,25 @@ class SupervisorAgent:
             except Exception as exc:
                 logger.warning("RAGAgent failed: %s", exc)
 
-        # TransactionAgent – always run when in selected list
+        # TransactionAgent – run when in selected list, with optional date filter
         if "TransactionAgent" in selected_agents:
             try:
                 tx_agent = TransactionAnalysisAgent(self.db, self.company_id)
-                state["transaction_data"] = tx_agent.analyze()
+                state["transaction_data"] = tx_agent.analyze(
+                    start_date=start_date,
+                    end_date=end_date,
+                    department_name=self._extract_department(prompt),
+                )
                 state["executed_tools"].append("fetch_transaction_trends")
                 state["citations"].append({
                     "source": "Financial Ledgers",
                     "detail": "Live PostgreSQL company transaction records (company-isolated).",
                 })
-                # Build evidence card for financial metric queries
                 td = state["transaction_data"]
                 sym = self.currency_sym
+                period_str = period_label.replace("_", " ")
                 state["evidence_cards"].append({
-                    "title": "Transaction Summary",
+                    "title": f"Transaction Summary ({period_str})",
                     "value": f"{sym}{td.get('total_expenses', 0):,.2f} expenses",
                     "detail": (
                         f"{td.get('total_transactions', 0)} transactions | "
@@ -341,96 +382,48 @@ class SupervisorAgent:
             except Exception as exc:
                 logger.warning("TransactionAgent failed: %s", exc)
 
-        # ── 3. Generate Synthesised Response via LLM ─────────────────────────
-        # Build the system instruction based on intent.
-        # For financial metric queries: instruct LLM to lead with the verified number.
-        is_metric_query = self._is_financial_metric_query(p_lower)
-        is_optimization_query = self._is_optimization_query(p_lower)
-
-        system_instruction = self._build_system_instruction(
-            is_metric_query=is_metric_query,
-            is_optimization_query=is_optimization_query,
-            state=state,
-        )
-
-        # Context passed to LLM – only data from actually-executed agents.
-        # Critically: do NOT include raw DB objects, secrets, or internal IDs.
-        context_summary: Dict[str, Any] = {
-            "selected_agents": state["selected_agents"],
-            "currency_code": self.currency_code,
-            "currency_symbol": self.currency_sym,
-        }
-        if state.get("transaction_data"):
-            td = state["transaction_data"]
-            context_summary["transaction_summary"] = {
-                "total_transactions": td.get("total_transactions"),
-                "total_expenses": td.get("total_expenses"),
-                "total_revenue": td.get("total_revenue"),
-                "net_profit": td.get("net_profit"),
-                "monthly_burn_rate": td.get("monthly_burn_rate"),
-                "expense_growth_rate": td.get("expense_growth_rate"),
-                "top_categories": td.get("top_categories", [])[:5],
-                "top_vendors": td.get("top_vendors", [])[:5],
-                "department_spending": td.get("department_spending", [])[:5],
-            }
-        if state.get("budget_data"):
-            bd = state["budget_data"]
-            context_summary["budget_summary"] = {
-                "total_allocated": bd.get("total_allocated"),
-                "total_spent": bd.get("total_spent"),
-                "overall_usage_pct": bd.get("overall_usage_pct"),
-                "critical_count": bd.get("critical_count"),
-                "at_risk_departments": bd.get("at_risk_departments", [])[:5],
-            }
-        if state.get("anomaly_data"):
-            context_summary["anomaly_count"] = len(state["anomaly_data"])
-            context_summary["top_anomalies"] = state["anomaly_data"][:3]
-        if state.get("vendor_data"):
-            vd = state["vendor_data"]
-            context_summary["vendor_summary"] = {
-                "vendor_count": vd.get("vendor_count"),
-                "top_vendors_by_spend": vd.get("vendors", [])[:5],
-                "negotiation_targets": vd.get("negotiation_targets", [])[:3],
-            }
-        if state.get("subscription_data"):
-            sd = state["subscription_data"]
-            context_summary["subscription_summary"] = {
-                "total_monthly_spend": sd.get("total_monthly_spend"),
-                "potential_monthly_savings": sd.get("potential_monthly_savings"),
-                "wasted_subscriptions_count": sd.get("wasted_subscriptions_count"),
-                "subscriptions_count": sd.get("subscriptions_count"),
-                "upcoming_renewals": sd.get("upcoming_renewals", [])[:3],
-            }
-        if state.get("forecast_data"):
-            context_summary["forecast_data"] = state["forecast_data"]
-        if state.get("savings_data"):
-            sv = state["savings_data"]
-            context_summary["savings_summary"] = {
-                "total_potential_monthly": sv.get("total_potential_monthly"),
-                "total_potential_annual": sv.get("total_potential_annual"),
-                "opportunities_count": sv.get("opportunities_count"),
-                "top_opportunities": sv.get("opportunities", [])[:4],
-            }
-        if state.get("optimization_plan"):
-            context_summary["optimization_plan"] = state["optimization_plan"]
-        if state.get("what_if_results"):
-            context_summary["what_if_results"] = state["what_if_results"]
-        if state.get("rag_results"):
-            context_summary["rag_results"] = state["rag_results"]
-
-        try:
-            final_text = await llm_client.generate_response(
-                prompt=prompt,
-                system_instruction=system_instruction,
-                context_data=context_summary,
+        # ── 3. Guard: metric query with failed TransactionAgent ───────────────
+        if is_metric_query and not state.get("transaction_data"):
+            final_text = (
+                "I couldn't retrieve the financial ledger required to calculate "
+                "this metric. Please try again after the transaction service is available."
             )
-        except Exception as exc:
-            logger.error("LLM response generation failed: %s", exc)
-            final_text = self._build_direct_response(state, p_lower)
+            state["final_response"] = final_text
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_agent_run(prompt, state, duration_ms)
+            return {
+                "message": state["final_response"],
+                "agents_involved": state["selected_agents"],
+                "tools_executed": state["executed_tools"],
+                "evidence_cards": state["evidence_cards"],
+                "suggested_actions": [],
+                "citations": state["citations"],
+            }
+
+        # ── 4. Generate Response ──────────────────────────────────────────────
+        if is_metric_query and state.get("transaction_data"):
+            # Financial metrics are deterministic – never call Gemini for the authoritative number.
+            final_text = self._build_direct_response(state, p_lower, period_label)
+        else:
+            system_instruction = self._build_system_instruction(
+                is_metric_query=is_metric_query,
+                is_optimization_query=is_optimization_query,
+                state=state,
+            )
+            context_summary = self._build_context_summary(state)
+            try:
+                final_text = await llm_client.generate_response(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    context_data=context_summary,
+                )
+            except Exception as exc:
+                logger.error("LLM response generation failed: %s", exc)
+                final_text = self._build_direct_response(state, p_lower, period_label)
 
         state["final_response"] = final_text
 
-        # ── 4. Log Execution to AgentRun Table ────────────────────────────────
+        # ── 5. Log Execution ──────────────────────────────────────────────────
         duration_ms = int((time.time() - start_time) * 1000)
         self._log_agent_run(prompt, state, duration_ms)
 
@@ -443,30 +436,32 @@ class SupervisorAgent:
             "citations": state["citations"],
         }
 
-    # ── Intent routing ────────────────────────────────────────────────────────
+    # ── Routing ───────────────────────────────────────────────────────────────
 
     def _route_intent(self, prompt: str) -> List[str]:
         """
         Route user requests to the minimum required specialised agents.
-        Uses deterministic phrase/keyword matching – no LLM call required for routing.
-        Priorities are evaluated in order; first match wins.
+
+        Priority order (first match wins):
+        1. What-If   – must come before optimization: "what if we reduce…" contains "reduce"
+        2. Optimization – must come before metric: "how can we reduce total expenses?" contains "total expenses"
+        3. Direct financial metrics
+        4. Anomaly detection
+        5. Forecasting
+        6. Subscription analysis
+        7. Vendor analysis
+        8. Budget analysis
+        9. Finance document / RAG
+        10. Safe default → TransactionAgent
         """
         agents = ["SupervisorAgent"]
 
-        # ── Priority 0: financial metric questions ──
-        # Must be checked BEFORE optimization to prevent "reduce expenses" from
-        # being confused with "what are our expenses".
-        if self._is_financial_metric_query(prompt):
-            agents.append("TransactionAgent")
-            return list(dict.fromkeys(agents))
-
-        # ── Priority 1: what-if simulation (must come before optimization,
-        #    because "what if we reduce..." contains "reduce") ──
+        # 1. What-if (before optimization – "reduce" is in both keyword sets)
         if any(w in prompt for w in self._WHATIF_KEYWORDS):
             agents.append("WhatIfAgent")
             return list(dict.fromkeys(agents))
 
-        # ── Priority 2: cost optimization ──
+        # 2. Cost optimization (before metric – "total expenses" can appear in optimization prompts)
         if self._is_optimization_query(prompt):
             agents.extend([
                 "SavingsAgent",
@@ -478,49 +473,173 @@ class SupervisorAgent:
             ])
             return list(dict.fromkeys(agents))
 
-        # ── Priority 3: anomaly detection ──
+        # 3. Direct financial metrics
+        if self._is_financial_metric_query(prompt):
+            agents.append("TransactionAgent")
+            return list(dict.fromkeys(agents))
+
+        # 4. Anomaly detection
         if any(w in prompt for w in self._ANOMALY_KEYWORDS):
             agents.extend(["AnomalyAgent", "TransactionAgent"])
             return list(dict.fromkeys(agents))
 
-        # ── Priority 4: forecasting ──
+        # 5. Forecasting
         if any(w in prompt for w in self._FORECAST_KEYWORDS):
             agents.append("ForecastingAgent")
             return list(dict.fromkeys(agents))
 
-        # ── Priority 5: subscription analysis ──
+        # 6. Subscription analysis
         if any(w in prompt for w in self._SUBSCRIPTION_KEYWORDS):
             agents.append("SubscriptionAgent")
             return list(dict.fromkeys(agents))
 
-        # ── Priority 6: vendor analysis ──
+        # 7. Vendor analysis
         if any(w in prompt for w in self._VENDOR_KEYWORDS):
             agents.append("VendorAgent")
             return list(dict.fromkeys(agents))
 
-        # ── Priority 7: budget analysis ──
+        # 8. Budget analysis
         if any(w in prompt for w in self._BUDGET_KEYWORDS):
             agents.extend(["BudgetAgent", "TransactionAgent"])
             return list(dict.fromkeys(agents))
 
-        # ── Priority 8: document / RAG ──
+        # 9. Finance document / RAG
         if any(w in prompt for w in self._RAG_KEYWORDS):
             agents.append("RAGAgent")
             return list(dict.fromkeys(agents))
 
-        # ── Default: general finance question → TransactionAgent only ──
+        # 10. Safe default
         agents.append("TransactionAgent")
         return list(dict.fromkeys(agents))
 
     def _is_financial_metric_query(self, prompt_lower: str) -> bool:
-        """Return True if the prompt is asking for a direct financial metric."""
         return any(phrase in prompt_lower for phrase in self._FINANCIAL_METRIC_PHRASES)
 
     def _is_optimization_query(self, prompt_lower: str) -> bool:
-        """Return True if the prompt is asking for cost optimisation advice."""
         return any(kw in prompt_lower for kw in self._OPTIMIZATION_KEYWORDS)
 
-    # ── Response helpers ──────────────────────────────────────────────────────
+    # ── Parsers ───────────────────────────────────────────────────────────────
+
+    def _extract_money_amount(self, prompt: str) -> Optional[float]:
+        """
+        Extract a monetary target from the prompt.
+        Supports ₹, $, €, £, k, lakh, million.
+
+        Percentages (e.g. 15%) are explicitly NOT treated as monetary values.
+        Numbers that are part of a percentage expression (NUMBER%) return None.
+        """
+        # First, remove all percentage expressions so they are never mistaken for money.
+        cleaned = re.sub(r"[0-9]+(?:\.[0-9]+)?\s*%", " ", prompt)
+
+        pattern = re.compile(
+            r"[₹$€£]\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(k|lakh|l|million|m)?|"
+            r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(k|lakh|l|million|m)",
+            re.IGNORECASE,
+        )
+        match = pattern.search(cleaned)
+        if not match:
+            return None
+
+        try:
+            # Group 1+2 = currency-prefixed; Group 3+4 = number+multiplier (no prefix)
+            if match.group(1) is not None:
+                raw = match.group(1).replace(",", "")
+                multiplier = (match.group(2) or "").lower()
+            else:
+                raw = match.group(3).replace(",", "")
+                multiplier = (match.group(4) or "").lower()
+
+            value = float(raw)
+            if multiplier == "k":
+                value *= 1_000
+            elif multiplier in {"lakh", "l"}:
+                value *= 100_000
+            elif multiplier in {"million", "m"}:
+                value *= 1_000_000
+            return value
+        except (ValueError, ArithmeticError) as exc:
+            logger.debug("Could not parse money amount: %s", exc)
+            return None
+
+    def _extract_percentage(self, prompt: str) -> Optional[float]:
+        """
+        Extract a percentage and return as decimal (e.g. 15% → 0.15).
+        Returns None if the value is outside 0–100.
+        """
+        match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%", prompt, re.IGNORECASE)
+        if not match:
+            return None
+        try:
+            value = float(match.group(1))
+            if value < 0 or value > 100:
+                return None
+            return value / 100.0
+        except (ValueError, ArithmeticError):
+            return None
+
+    def _extract_department(self, prompt: str) -> Optional[str]:
+        """
+        Resolve a department mentioned in the prompt against departments
+        belonging to the current company (tenant-safe).
+        """
+        departments = (
+            self.db.query(Department)
+            .filter(Department.company_id == self.company_id)
+            .all()
+        )
+        p_lower = prompt.lower()
+        for dept in departments:
+            if dept.name.lower() in p_lower:
+                return dept.name
+        return None
+
+    def _build_what_if_adjustments(self, prompt: str) -> Dict[str, float]:
+        """
+        Build department_spend_adjustments dict from the user's natural-language prompt.
+        Returns {} when department or percentage cannot be resolved.
+        """
+        department = self._extract_department(prompt)
+        percentage = self._extract_percentage(prompt)
+
+        if not department or percentage is None:
+            return {}
+
+        p_lower = prompt.lower()
+        increase_words = ["increase", "raise", "grow", "higher"]
+        decrease_words = ["decrease", "reduce", "cut", "lower", "drop"]
+
+        if any(word in p_lower for word in increase_words):
+            return {department: percentage}
+        if any(word in p_lower for word in decrease_words):
+            return {department: -percentage}
+        return {}
+
+    def _resolve_period(
+        self, prompt_lower: str
+    ) -> Tuple[Optional[date], Optional[date], str]:
+        """
+        Detect time-period references in the prompt.
+        Returns (start_date, end_date, label).
+        """
+        today = date.today()
+
+        if "this month" in prompt_lower:
+            return today.replace(day=1), today, "this_month"
+        if "today" in prompt_lower:
+            return today, today, "today"
+        if "this year" in prompt_lower:
+            return date(today.year, 1, 1), today, "this_year"
+        if "last 30 days" in prompt_lower:
+            return today - timedelta(days=30), today, "last_30_days"
+        if "last month" in prompt_lower:
+            first_of_this = today.replace(day=1)
+            last_month_end = first_of_this - timedelta(days=1)
+            last_month_start = last_month_end.replace(day=1)
+            return last_month_start, last_month_end, "last_month"
+
+        return None, None, "all_time"
+
+    # ── Response builders ─────────────────────────────────────────────────────
 
     def _build_system_instruction(
         self,
@@ -528,30 +647,13 @@ class SupervisorAgent:
         is_optimization_query: bool,
         state: AgentState,
     ) -> str:
-        """
-        Build a targeted system instruction for the LLM based on intent.
-        The instruction prevents LLM from fabricating financial numbers.
-        """
         sym = self.currency_sym
         base = (
             "You are the Money Analysis Finance Controller AI. "
-            "You must ONLY report financial figures that are explicitly provided in the context data below. "
-            "You must NEVER invent, estimate, or hallucinate any monetary amounts, percentages, or counts. "
+            "You must ONLY report financial figures explicitly provided in the context data below. "
+            "You must NEVER invent, estimate, or hallucinate monetary amounts, percentages, or counts. "
             f"Use {self.currency_code} ({sym}) as the currency symbol throughout your response.\n\n"
         )
-
-        if is_metric_query and state.get("transaction_data"):
-            td = state["transaction_data"]
-            return (
-                base
-                + "The user is asking for a factual financial metric. "
-                + "Lead your response directly with the verified number(s) from the context. "
-                + "Do NOT lead with optimization recommendations, savings analysis, or suggestions. "
-                + f"Verified data: total_expenses={sym}{td.get('total_expenses', 0):,.2f}, "
-                + f"total_revenue={sym}{td.get('total_revenue', 0):,.2f}, "
-                + f"net_profit={sym}{td.get('net_profit', 0):,.2f}."
-            )
-
         if is_optimization_query:
             return (
                 base
@@ -559,71 +661,153 @@ class SupervisorAgent:
                 + "Provide actionable recommendations based only on the data provided in context. "
                 + "Do not fabricate savings figures not present in the context."
             )
-
         return base + "Answer the user's finance question using only the data provided in the context."
 
-    def _build_direct_response(self, state: AgentState, prompt_lower: str) -> str:
-        """
-        Build a deterministic response when the LLM is unavailable.
-        Uses verified data from executed agents only.
-        """
-        sym = self.currency_sym
-        parts = []
-
+    def _build_context_summary(self, state: AgentState) -> Dict[str, Any]:
+        """Build the context dict passed to the LLM – safe, no DB objects or secrets."""
+        ctx: Dict[str, Any] = {
+            "selected_agents": state["selected_agents"],
+            "currency_code": self.currency_code,
+            "currency_symbol": self.currency_sym,
+            "period": state.get("period_label", "all_time"),
+        }
         if state.get("transaction_data"):
             td = state["transaction_data"]
-            if any(ph in prompt_lower for ph in ["total expense", "total spending", "how much did we spend", "how much have we spent"]):
-                parts.append(f"Your total expenses are {sym}{td.get('total_expenses', 0):,.2f}.")
-            elif "total revenue" in prompt_lower or "total income" in prompt_lower:
-                parts.append(f"Your total revenue is {sym}{td.get('total_revenue', 0):,.2f}.")
-            elif "net profit" in prompt_lower or "net loss" in prompt_lower:
-                parts.append(f"Your net profit is {sym}{td.get('net_profit', 0):,.2f}.")
-            else:
-                parts.append(
-                    f"Financial Summary: Total Expenses: {sym}{td.get('total_expenses', 0):,.2f} | "
-                    f"Total Revenue: {sym}{td.get('total_revenue', 0):,.2f} | "
-                    f"Net Profit: {sym}{td.get('net_profit', 0):,.2f}."
+            ctx["transaction_summary"] = {
+                "total_transactions": td.get("total_transactions"),
+                "total_expenses": td.get("total_expenses"),
+                "total_revenue": td.get("total_revenue"),
+                "net_profit": td.get("net_profit"),
+                "monthly_burn_rate": td.get("monthly_burn_rate"),
+                "expense_growth_rate": td.get("expense_growth_rate"),
+                "top_categories": td.get("top_categories", [])[:5],
+                "top_vendors": td.get("top_vendors", [])[:5],
+                "department_spending": td.get("department_spending", [])[:5],
+            }
+        if state.get("budget_data"):
+            bd = state["budget_data"]
+            ctx["budget_summary"] = {
+                "total_allocated": bd.get("total_allocated"),
+                "total_spent": bd.get("total_spent"),
+                "overall_usage_pct": bd.get("overall_usage_pct"),
+                "critical_count": bd.get("critical_count"),
+                "at_risk_departments": bd.get("at_risk_departments", [])[:5],
+            }
+        if state.get("anomaly_data"):
+            ctx["anomaly_count"] = len(state["anomaly_data"])
+            ctx["top_anomalies"] = state["anomaly_data"][:3]
+        if state.get("vendor_data"):
+            vd = state["vendor_data"]
+            ctx["vendor_summary"] = {
+                "vendor_count": vd.get("vendor_count"),
+                "top_vendors_by_spend": vd.get("vendors", [])[:5],
+                "negotiation_targets": vd.get("negotiation_targets", [])[:3],
+            }
+        if state.get("subscription_data"):
+            sd = state["subscription_data"]
+            ctx["subscription_summary"] = {
+                "total_monthly_spend": sd.get("total_monthly_spend"),
+                "potential_monthly_savings": sd.get("potential_monthly_savings"),
+                "wasted_subscriptions_count": sd.get("wasted_subscriptions_count"),
+                "subscriptions_count": sd.get("subscriptions_count"),
+                "upcoming_renewals": sd.get("upcoming_renewals", [])[:3],
+            }
+        if state.get("forecast_data"):
+            ctx["forecast_data"] = state["forecast_data"]
+        if state.get("savings_data"):
+            sv = state["savings_data"]
+            ctx["savings_summary"] = {
+                "total_potential_monthly": sv.get("total_potential_monthly"),
+                "total_potential_annual": sv.get("total_potential_annual"),
+                "opportunities_count": sv.get("opportunities_count"),
+                "top_opportunities": sv.get("opportunities", [])[:4],
+            }
+        if state.get("optimization_plan"):
+            ctx["optimization_plan"] = state["optimization_plan"]
+        if state.get("what_if_results"):
+            ctx["what_if_results"] = state["what_if_results"]
+        if state.get("rag_results"):
+            ctx["rag_results"] = state["rag_results"]
+        return ctx
+
+    def _build_direct_response(
+        self, state: AgentState, prompt_lower: str, period_label: str = "all_time"
+    ) -> str:
+        """
+        Build a deterministic response from verified agent data.
+        Used for financial metric queries and as LLM fallback.
+        Never fabricates financial figures.
+        """
+        sym = self.currency_sym
+        period_str = period_label.replace("_", " ")
+        suffix = f" ({period_str})" if period_label != "all_time" else ""
+        dept = self._extract_department(state.get("user_prompt", ""))
+        dept_prefix = f"{dept} spending" if dept else "your expenses"
+
+        td = state.get("transaction_data")
+        if td is not None:
+            total_exp = td.get("total_expenses", 0)
+            total_rev = td.get("total_revenue", 0)
+            net = td.get("net_profit", 0)
+            count = td.get("total_transactions", 0)
+
+            if any(ph in prompt_lower for ph in [
+                "total expense", "total spending", "how much did we spend",
+                "how much have we spent", "how much did we pay", "overall expenses",
+                "total cost",
+            ]):
+                if dept:
+                    return (
+                        f"{dept} total expenses{suffix} are **{sym}{total_exp:,.2f}**"
+                        f" across {count} transactions."
+                    )
+                return (
+                    f"Your total expenses{suffix} are **{sym}{total_exp:,.2f}**"
+                    f" across {count} transactions.\n\n"
+                    f"- Total Revenue: {sym}{total_rev:,.2f}\n"
+                    f"- Net Profit: {sym}{net:,.2f}"
                 )
+
+            if "total revenue" in prompt_lower or "total income" in prompt_lower:
+                return (
+                    f"Your total revenue{suffix} is **{sym}{total_rev:,.2f}**.\n\n"
+                    f"- Total Expenses: {sym}{total_exp:,.2f}\n"
+                    f"- Net Profit: {sym}{net:,.2f}"
+                )
+
+            if "net profit" in prompt_lower or "net loss" in prompt_lower or "gross profit" in prompt_lower:
+                direction = "profit" if net >= 0 else "loss"
+                return (
+                    f"Your net {direction}{suffix} is **{sym}{abs(net):,.2f}**.\n\n"
+                    f"- Total Revenue: {sym}{total_rev:,.2f}\n"
+                    f"- Total Expenses: {sym}{total_exp:,.2f}"
+                )
+
+            # Generic financial summary
+            return (
+                f"### Financial Summary{suffix}\n\n"
+                f"- **Total Expenses**: {sym}{total_exp:,.2f}\n"
+                f"- **Total Revenue**: {sym}{total_rev:,.2f}\n"
+                f"- **Net Profit**: {sym}{net:,.2f}\n"
+                f"- **Total Transactions**: {count}\n"
+                f"- **Monthly Burn Rate**: {sym}{td.get('monthly_burn_rate', 0):,.2f}"
+            )
 
         if state.get("savings_data"):
             sv = state["savings_data"]
             m = sv.get("total_potential_monthly", 0)
             if m and m > 0:
-                parts.append(
-                    f"Potential monthly savings identified: {sym}{m:,.2f} ({sym}{sv.get('total_potential_annual', 0):,.2f} annually)."
+                return (
+                    f"Potential monthly savings: {sym}{m:,.2f} "
+                    f"({sym}{sv.get('total_potential_annual', 0):,.2f} annually)."
                 )
 
-        if not parts:
-            parts.append(
-                "I have reviewed the available financial data. "
-                "Please ask a more specific question or check the dashboard for detailed metrics."
-            )
-
-        return " ".join(parts)
-
-    def _extract_amount(self, prompt: str) -> Optional[float]:
-        """Extract a monetary amount from a natural language prompt."""
-        import re
-        match = re.search(
-            r"[₹$€£]?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:k|lakh|l|million|m)?",
-            prompt,
-            re.IGNORECASE,
+        return (
+            "I couldn't calculate that value from the available financial records. "
+            "Please check the dashboard for real-time metrics."
         )
-        if match:
-            try:
-                raw = match.group(1).replace(",", "")
-                val = float(raw)
-                p_lower = prompt.lower()
-                if "k" in p_lower:
-                    val *= 1000
-                elif "lakh" in p_lower or " l" in p_lower:
-                    val *= 100_000
-                elif "m" in p_lower or "million" in p_lower:
-                    val *= 1_000_000
-                return val
-            except (ValueError, ArithmeticError) as exc:
-                logger.debug("Could not parse amount from prompt: %s", exc)
-        return None
+
+    # ── Logging ───────────────────────────────────────────────────────────────
 
     def _log_agent_run(self, prompt: str, state: AgentState, duration_ms: int) -> None:
         try:
