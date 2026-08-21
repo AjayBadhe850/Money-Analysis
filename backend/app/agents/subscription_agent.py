@@ -91,20 +91,20 @@ class SubscriptionOptimizationAgent:
                 })
 
         # Find duplicate / similar tool clusters
-        # Group by category heuristics
+        # Group by category heuristics – report as recommendation only, no fabricated savings
         tool_names = [s.service_name.lower() for s in subs]
         duplicate_clusters = []
         if sum(1 for name in tool_names if "slack" in name or "teams" in name or "zoom" in name or "meet" in name) >= 2:
             duplicate_clusters.append({
                 "category": "Team Communication & Conferencing",
                 "recommendation": "Multiple communication & meeting platforms detected. Standardize on single workspace vendor.",
-                "potential_savings_monthly": 1500.0,
+                "potential_savings_monthly": None,  # Cannot be calculated without actual seat pricing data
             })
         if sum(1 for name in tool_names if "jira" in name or "asana" in name or "notion" in name or "monday" in name or "trello" in name) >= 2:
             duplicate_clusters.append({
                 "category": "Project & Task Management",
                 "recommendation": "Multiple project management licenses in use across departments. Consolidate to unified seat license.",
-                "potential_savings_monthly": 2200.0,
+                "potential_savings_monthly": None,  # Cannot be calculated without actual seat pricing data
             })
 
         optimization_items.sort(key=lambda x: x["estimated_monthly_waste"], reverse=True)

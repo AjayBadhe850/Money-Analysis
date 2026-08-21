@@ -88,64 +88,108 @@ class LLMClient:
         self, prompt: str, system_instruction: Optional[str], context_data: Optional[Dict[str, Any]]
     ) -> str:
         """
-        High-precision financial intelligence generator based on structured tool outputs and prompt semantics.
+        Deterministic financial fallback response built from verified context data only.
+        This method must NEVER fabricate monetary amounts, percentages, or counts.
+        All figures reported come exclusively from context_data passed by executed agents.
         """
         p_lower = prompt.lower()
-        
-        # Check context data passed from specialized agents
+        sym = ""
         if context_data:
-            if "savings_total" in context_data:
+            code = context_data.get("currency_code", "USD")
+            sym = context_data.get("currency_symbol") or {
+                "USD": "$", "INR": "₹", "EUR": "€", "GBP": "£"
+            }.get(code.upper(), code)
+
+        # ── Financial metric response (use verified numbers from TransactionAgent) ──
+        if context_data and context_data.get("transaction_summary"):
+            ts = context_data["transaction_summary"]
+            total_exp = ts.get("total_expenses", 0)
+            total_rev = ts.get("total_revenue", 0)
+            net = ts.get("net_profit", 0)
+            tx_count = ts.get("total_transactions", 0)
+
+            if any(ph in p_lower for ph in [
+                "total expense", "total spending", "how much did we spend",
+                "how much have we spent", "how much did we pay", "overall expenses",
+                "total cost",
+            ]):
                 return (
-                    f"### Financial Optimization Analysis\n\n"
-                    f"Based on our multi-agent audit across active departments, we have identified **${context_data.get('savings_total', 0):,.2f}** in monthly potential savings "
-                    f"(**${context_data.get('savings_annual', 0):,.2f}** annually).\n\n"
-                    f"**Key Focus Areas:**\n"
-                    f"- **License Waste Optimization**: Immediate reclamation of unused SaaS seats.\n"
-                    f"- **Vendor Price Renegotiation**: Contracts exceeding market benchmarks.\n"
-                    f"- **Departmental Burn Moderation**: Overrun mitigation in High-Velocity cost centers."
+                    f"Your total expenses are **{sym}{total_exp:,.2f}**"
+                    f" across {tx_count} transactions.\n\n"
+                    f"- Total Revenue: {sym}{total_rev:,.2f}\n"
+                    f"- Net Profit: {sym}{net:,.2f}"
                 )
 
-        if "save" in p_lower or "saving" in p_lower or "opportunity" in p_lower:
+            if "total revenue" in p_lower or "total income" in p_lower:
+                return (
+                    f"Your total revenue is **{sym}{total_rev:,.2f}**.\n\n"
+                    f"- Total Expenses: {sym}{total_exp:,.2f}\n"
+                    f"- Net Profit: {sym}{net:,.2f}"
+                )
+
+            if "net profit" in p_lower or "net loss" in p_lower or "gross profit" in p_lower:
+                direction = "profit" if net >= 0 else "loss"
+                return (
+                    f"Your net {direction} is **{sym}{abs(net):,.2f}**.\n\n"
+                    f"- Total Revenue: {sym}{total_rev:,.2f}\n"
+                    f"- Total Expenses: {sym}{total_exp:,.2f}"
+                )
+
+            # Generic transaction summary
             return (
-                "### Money Analysis Optimization Plan\n\n"
-                "I analyzed our ledgers, SaaS licenses, and vendor SLAs. Here are our top cost reduction opportunities:\n\n"
-                "1. **Unused SaaS License Reclamation**: Revoke 42 unassigned seats across Salesforce, GitHub Enterprise, and Zoom (Estimated saving: **$9,857/mo** | Risk: Low).\n"
-                "2. **AWS Cloud Reserved Instances**: Transition on-demand GPU clusters to 1-year committed compute savings plans (Estimated saving: **$14,200/mo** | Risk: Low).\n"
-                "3. **Vendor Consolidation**: Merge redundant tooling in Design and Sales departments (Estimated saving: **$4,500/mo** | Risk: Medium).\n\n"
-                "Total Monthly Potential Savings: **$28,557/mo** (**$342,684/year**)."
+                f"### Financial Summary\n\n"
+                f"- **Total Expenses**: {sym}{total_exp:,.2f}\n"
+                f"- **Total Revenue**: {sym}{total_rev:,.2f}\n"
+                f"- **Net Profit**: {sym}{net:,.2f}\n"
+                f"- **Total Transactions**: {tx_count}\n"
+                f"- **Monthly Burn Rate**: {sym}{ts.get('monthly_burn_rate', 0):,.2f}"
             )
 
-        if "abnormal" in p_lower or "anomaly" in p_lower:
+        # ── Savings / optimisation response (use verified savings summary) ──
+        if context_data and context_data.get("savings_summary"):
+            sv = context_data["savings_summary"]
+            m = sv.get("total_potential_monthly", 0)
+            a = sv.get("total_potential_annual", 0)
+            count = sv.get("opportunities_count", 0)
+            lines = [f"### Cost Optimisation Analysis\n\nIdentified **{count}** opportunities."]
+            if m and m > 0:
+                lines.append(f"- Total potential monthly savings: **{sym}{m:,.2f}**")
+                lines.append(f"- Total potential annual savings: **{sym}{a:,.2f}**")
+            for opp in sv.get("top_opportunities", [])[:4]:
+                ms = opp.get("estimated_monthly_saving", 0)
+                lines.append(
+                    f"- **{opp.get('title', 'Opportunity')}**: {sym}{ms:,.2f}/mo "
+                    f"(Risk: {opp.get('risk_level', 'N/A')})"
+                )
+            return "\n".join(lines)
+
+        # ── Anomaly response ──
+        if context_data and context_data.get("anomaly_count"):
             return (
-                "### Anomaly Detection Report\n\n"
-                "The **Isolation Forest Anomaly Agent** analyzed recent transactions and flagged the following high-variance items:\n\n"
-                "- **TX-9482 (Amazon Web Services - $45,200.00)**: Amount is **4.2x higher** than historical 6-month vendor average. Severity: **HIGH**.\n"
-                "- **TX-9310 (Express Logistics - $8,900.00)**: Off-cycle weekend transaction outside normal operational schedule. Severity: **MEDIUM**.\n\n"
-                "Recommended Action: Request manager audit and verify invoice itemization before settlement."
+                f"### Anomaly Detection Report\n\n"
+                f"The Isolation Forest scan identified **{context_data['anomaly_count']}** "
+                f"statistical anomalies in company transaction records. "
+                f"Review flagged items in the Anomaly dashboard for details."
             )
 
-        if "forecast" in p_lower or "runway" in p_lower or "next quarter" in p_lower:
+        # ── Forecast response ──
+        if context_data and context_data.get("forecast_data"):
+            fd = context_data["forecast_data"]
+            total_proj = fd.get("total_projected_spend", 0)
+            horizon = fd.get("horizon_days", 90)
             return (
-                "### Financial Forecast & Runway Projection\n\n"
-                "Based on our time-series regression model over historical expenditure patterns:\n\n"
-                "- **30-Day Projected Spend**: **$485,000** (Confidence: 94%)\n"
-                "- **90-Day (Next Quarter) Projected Spend**: **$1,490,000**\n"
-                "- **Budget Overrun Risk**: The *Engineering* department is tracking at **114% velocity** and will exceed allocation by day 22 unless corrective actions are taken.\n\n"
-                "Recommended Action: Activate budget cap guardrails on cloud infrastructure spending."
+                f"### Financial Forecast\n\n"
+                f"Projected spend over the next **{horizon} days**: **{sym}{total_proj:,.2f}**.\n"
+                f"This forecast is based on historical expenditure trends."
             )
 
-        if "vendor" in p_lower or "supplier" in p_lower:
-            return (
-                "### Vendor Intelligence & Efficiency Audit\n\n"
-                "- **Top Spend Vendor**: Amazon Web Services ($142,500 YTD, Efficiency Score: 92/100)\n"
-                "- **High-Risk Supplier**: Cloudflare Network ($18,400 YTD, Delivery SLA: 98%, Price Drift: +8% YoY)\n"
-                "- **Consolidation Target**: 3 separate project management tools in use across Engineering, Marketing, and Operations."
-            )
-
+        # ── Generic fallback – no data available ──
         return (
-            "### Money Analysis Financial Controller Response\n\n"
-            f"I have reviewed our live enterprise financial ledgers regarding: *\"{prompt}\"*.\n\n"
-            "All multi-agent calculations have been synthesized. Let me know if you would like me to trigger an automated optimization plan, simulate a What-If scenario, or submit an approval request."
+            "### Money Analysis Financial Controller\n\n"
+            f"I reviewed available financial data for your query: *\"{prompt}\"*. "
+            "No verified financial figures are available for the selected time period. "
+            "Please ensure transactions are recorded and try again, "
+            "or use the Dashboard for real-time metrics."
         )
 
 

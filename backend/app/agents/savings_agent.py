@@ -53,27 +53,47 @@ class SavingsOpportunityAgent:
             })
 
         # 2. Duplicate Tool Consolidation
+        # Only include when a calculable saving exists (not None/zero).
         for dup in sub_data.get("duplicate_tool_opportunities", []):
-            monthly_sav = float(dup.get("potential_savings_monthly", 1500.0))
-            opportunities.append({
-                "title": f"Consolidate {dup['category']}",
-                "description": dup["recommendation"],
-                "category": "Vendor Consolidation",
-                "estimated_monthly_saving": monthly_sav,
-                "estimated_annual_saving": monthly_sav * 12,
-                "confidence": 0.90,
-                "risk_level": "MEDIUM",
-                "evidence": {"category": dup["category"]},
-                "source_agent": "SubscriptionOptimizationAgent",
-            })
+            monthly_sav = dup.get("potential_savings_monthly")
+            if monthly_sav is None:
+                # No reliable saving can be calculated – include as advisory only
+                opportunities.append({
+                    "title": f"Consolidate {dup['category']}",
+                    "description": dup["recommendation"],
+                    "category": "Vendor Consolidation",
+                    "estimated_monthly_saving": 0.0,
+                    "estimated_annual_saving": 0.0,
+                    "confidence": 0.70,
+                    "risk_level": "MEDIUM",
+                    "evidence": {"category": dup["category"], "note": "Saving amount requires manual pricing review."},
+                    "source_agent": "SubscriptionOptimizationAgent",
+                })
+            else:
+                monthly_sav = float(monthly_sav)
+                opportunities.append({
+                    "title": f"Consolidate {dup['category']}",
+                    "description": dup["recommendation"],
+                    "category": "Vendor Consolidation",
+                    "estimated_monthly_saving": monthly_sav,
+                    "estimated_annual_saving": monthly_sav * 12,
+                    "confidence": 0.90,
+                    "risk_level": "MEDIUM",
+                    "evidence": {"category": dup["category"]},
+                    "source_agent": "SubscriptionOptimizationAgent",
+                })
 
         # 3. Vendor Contract Renegotiation
         for vt in vend_data.get("negotiation_targets", [])[:3]:
-            annual_pot = float(vt.get("potential_savings", 5000.0))
+            annual_pot_raw = vt.get("potential_savings")
+            if annual_pot_raw is None:
+                continue  # Skip if no reliable saving figure available
+            annual_pot = float(annual_pot_raw)
             monthly_pot = round(annual_pot / 12, 2)
+            annual_spend = vt.get("annual_spend", 0)
             opportunities.append({
                 "title": f"Renegotiate {vt['vendor_name']} Contract",
-                "description": f"Trigger volume renegotiation or RFP rebidding based on ${vt['annual_spend']:,.2f} annual spend.",
+                "description": f"Volume renegotiation or RFP rebidding based on {annual_spend:,.2f} annual spend.",
                 "category": "Vendor Procurement",
                 "estimated_monthly_saving": monthly_pot,
                 "estimated_annual_saving": annual_pot,
@@ -81,18 +101,24 @@ class SavingsOpportunityAgent:
                 "risk_level": "MEDIUM",
                 "evidence": {
                     "vendor_name": vt["vendor_name"],
-                    "annual_spend": vt["annual_spend"],
-                    "efficiency_score": vt["efficiency_score"],
+                    "annual_spend": annual_spend,
+                    "efficiency_score": vt.get("efficiency_score"),
                 },
                 "source_agent": "VendorIntelligenceAgent",
             })
 
         # 4. Department Overrun Mitigation
         for ar in budg_data.get("at_risk_departments", [])[:2]:
-            overspend = float(ar.get("projected_overspend", 2000.0))
+            overspend_raw = ar.get("projected_overspend")
+            if overspend_raw is None or overspend_raw <= 0:
+                continue  # Only include genuine projected overruns
+            overspend = float(overspend_raw)
             opportunities.append({
                 "title": f"Moderate {ar['department']} Discretionary OPEX",
-                "description": f"Apply spending cap on non-critical expenses to prevent projected ${overspend:,.2f} month-end overrun.",
+                "description": (
+                    f"Apply spending cap on non-critical expenses to prevent projected "
+                    f"{overspend:,.2f} month-end overrun."
+                ),
                 "category": "Budget Governance",
                 "estimated_monthly_saving": overspend,
                 "estimated_annual_saving": round(overspend * 12, 2),
@@ -100,24 +126,15 @@ class SavingsOpportunityAgent:
                 "risk_level": "LOW",
                 "evidence": {
                     "department": ar["department"],
-                    "allocated": ar["allocated"],
-                    "spent": ar["spent"],
+                    "allocated": ar.get("allocated"),
+                    "spent": ar.get("spent"),
                 },
                 "source_agent": "BudgetAgent",
             })
 
-        # 5. Cloud Compute Reserved Instances
-        opportunities.append({
-            "title": "AWS / Cloud Infrastructure Reserved Instances",
-            "description": "Convert on-demand compute nodes to 1-year committed compute savings plans for 32% cost reduction.",
-            "category": "Cloud FinOps",
-            "estimated_monthly_saving": 8500.0,
-            "estimated_annual_saving": 102000.0,
-            "confidence": 0.95,
-            "risk_level": "LOW",
-            "evidence": {"infrastructure_provider": "AWS / GCP", "commitment_term": "1 Year"},
-            "source_agent": "CostOptimizationAgent",
-        })
+        # Note: no hardcoded cloud savings are injected here.
+        # Cloud FinOps recommendations require actual infrastructure cost data
+        # (e.g. AWS Cost Explorer API) that is not currently connected.
 
         # Rank by estimated monthly savings descending
         opportunities.sort(key=lambda x: x["estimated_monthly_saving"], reverse=True)
