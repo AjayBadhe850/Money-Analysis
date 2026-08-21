@@ -1,0 +1,54 @@
+services:
+  # 1. FastAPI REST API Backend
+  - type: web
+    name: money-analysis-backend
+    runtime: python
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 4"
+    plan: standard
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: costwise-supabase
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: costwise-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: STAGE
+        value: 3
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+  # 2. Celery Worker & Beat Scheduler
+  - type: worker
+    name: money-analysis-worker
+    runtime: python
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "celery -A app.core.celery_app.celery_app worker --beat --loglevel=info"
+    plan: standard
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: costwise-supabase
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: costwise-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: STAGE
+        value: 3

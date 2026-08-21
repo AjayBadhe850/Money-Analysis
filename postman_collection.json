@@ -1,0 +1,282 @@
+{
+  "info": {
+    "name": "Money Analysis - Multi-Agent Finance Controller API Suite",
+    "description": "Complete enterprise API collection covering Authentication, Financial Operations, LangGraph Multi-Agent Workflows, Isolation Forest Anomaly Radar, Time-Series Forecasting, Human-in-the-Loop Approvals, ReportLab PDF Exports, and Vector RAG.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication & Users",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.access_token) {",
+                  "    pm.collectionVariables.set('token', jsonData.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "admin@moneyanalysis.ai", "type": "text" },
+                { "key": "password", "value": "Password123!", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Get Current User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Financial Core Ledger",
+      "item": [
+        {
+          "name": "Get Dashboard Summary & KPIs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/dashboard/summary", "host": ["{{baseUrl}}"], "path": ["dashboard", "summary"] }
+          }
+        },
+        {
+          "name": "List Transactions (Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/transactions?skip=0&limit=50", "host": ["{{baseUrl}}"], "path": ["transactions"] }
+          }
+        },
+        {
+          "name": "List Budgets & Spending",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/budgets", "host": ["{{baseUrl}}"], "path": ["budgets"] }
+          }
+        },
+        {
+          "name": "List Vendors & Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/vendors", "host": ["{{baseUrl}}"], "path": ["vendors"] }
+          }
+        },
+        {
+          "name": "List SaaS Subscriptions & Utilization",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/subscriptions", "host": ["{{baseUrl}}"], "path": ["subscriptions"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Multi-Agent AI System",
+      "item": [
+        {
+          "name": "Multi-Agent Financial Copilot Query",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"How can we reduce quarterly operating expenses by $50,000 across cloud and SaaS?\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/ai/chat", "host": ["{{baseUrl}}"], "path": ["ai", "chat"] }
+          }
+        },
+        {
+          "name": "Scan Financial Anomalies (Isolation Forest)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contamination\": 0.08\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/ai/anomalies/scan", "host": ["{{baseUrl}}"], "path": ["ai", "anomalies", "scan"] }
+          }
+        },
+        {
+          "name": "Get Active Anomalies",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/ai/anomalies", "host": ["{{baseUrl}}"], "path": ["ai", "anomalies"] }
+          }
+        },
+        {
+          "name": "Generate 90-Day Expenditure Forecast",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/ai/forecasts?horizon_days=90", "host": ["{{baseUrl}}"], "path": ["ai", "forecasts"] }
+          }
+        },
+        {
+          "name": "Run What-If Scenario Simulation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario_name\": \"Cloud & Travel Moderation\",\n  \"cloud_reduction_pct\": 15,\n  \"headcount_change_pct\": 0,\n  \"travel_reduction_pct\": 25,\n  \"saas_cleanup_pct\": 20\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/ai/what-if", "host": ["{{baseUrl}}"], "path": ["ai", "what-if"] }
+          }
+        },
+        {
+          "name": "Generate Target Cost Optimization Strategy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_savings_amount\": 50000,\n  \"timeframe_months\": 3,\n  \"risk_tolerance\": \"MEDIUM\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/ai/optimization/plan", "host": ["{{baseUrl}}"], "path": ["ai", "optimization", "plan"] }
+          }
+        },
+        {
+          "name": "Get AI Cost Efficiency Score",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/ai/cost-efficiency-score", "host": ["{{baseUrl}}"], "path": ["ai", "cost-efficiency-score"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Governance & Human-in-the-Loop Approvals",
+      "item": [
+        {
+          "name": "List Approval Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/ai/approvals", "host": ["{{baseUrl}}"], "path": ["ai", "approvals"] }
+          }
+        },
+        {
+          "name": "Approve Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\",\n  \"notes\": \"Approved by Finance Controller.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/ai/approvals/1/respond", "host": ["{{baseUrl}}"], "path": ["ai", "approvals", "1", "respond"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Reports & Automation Telemetry",
+      "item": [
+        {
+          "name": "Get Monthly Controller Report Data",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/reports/monthly", "host": ["{{baseUrl}}"], "path": ["reports", "monthly"] }
+          }
+        },
+        {
+          "name": "Export Monthly Controller Report (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/reports/monthly/pdf", "host": ["{{baseUrl}}"], "path": ["reports", "monthly", "pdf"] }
+          }
+        },
+        {
+          "name": "Get Celery Automation Schedule Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/reports/automation-status", "host": ["{{baseUrl}}"], "path": ["reports", "automation-status"] }
+          }
+        }
+      ]
+    }
+  ]
+}
