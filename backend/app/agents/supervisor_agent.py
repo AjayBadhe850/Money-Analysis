@@ -644,8 +644,14 @@ class SupervisorAgent:
             agents.append("RAGAgent")
             return list(dict.fromkeys(agents))
 
-        # 10. Safe default
-        agents.append("TransactionAgent")
+        # 10. General / Safe default
+        financial_general_keywords = [
+            "overview", "summary", "transaction", "ledger", "balance",
+            "spend", "expense", "revenue", "income", "finance", "money",
+            "financial", "status", "dashboard", "report", "burn"
+        ]
+        if any(w in prompt for w in financial_general_keywords):
+            agents.append("TransactionAgent")
         return list(dict.fromkeys(agents))
 
     def _is_financial_metric_query(self, prompt_lower: str) -> bool:
@@ -784,9 +790,11 @@ class SupervisorAgent:
         sym = self.currency_sym
         base = (
             "You are the Money Analysis Finance Controller AI. "
-            "You must ONLY report financial figures explicitly provided in the context data below. "
-            "You must NEVER invent, estimate, or hallucinate monetary amounts, percentages, or counts. "
-            f"Use {self.currency_code} ({sym}) as the currency symbol throughout your response.\n\n"
+            "When answering questions about company financial metrics or records, "
+            "you must strictly use figures explicitly provided in the context data. "
+            "For general financial, accounting, business, technology, or conceptual questions, "
+            "provide a clear, informative, and professional answer. "
+            f"Use {self.currency_code} ({sym}) as the default currency symbol when discussing monetary values.\n\n"
         )
         if is_optimization_query:
             return (
@@ -795,7 +803,7 @@ class SupervisorAgent:
                 + "Provide actionable recommendations based only on the data provided in context. "
                 + "Do not fabricate savings figures not present in the context."
             )
-        return base + "Answer the user's finance question using only the data provided in the context."
+        return base + "Answer the user's question accurately, concisely, and helpfully."
 
     def _build_context_summary(self, state: AgentState) -> Dict[str, Any]:
         """Build the context dict passed to the LLM – safe, no DB objects or secrets."""
