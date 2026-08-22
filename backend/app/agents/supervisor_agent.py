@@ -1,5 +1,7 @@
 import logging
 import re
+import ast
+import operator
 import time
 from typing import Dict, Any, List, Optional, TypedDict, Tuple
 from datetime import datetime, timezone, date, timedelta
@@ -21,6 +23,63 @@ from app.models.company import Company
 from app.models.department import Department
 
 logger = logging.getLogger(__name__)
+
+
+SAFE_MATH_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+def _try_safe_math_eval(prompt: str) -> Optional[str]:
+    """Safely evaluate arithmetic calculations like '10+2', '500 * 12', etc."""
+    cleaned = prompt.strip().rstrip("?=").strip()
+    cleaned = re.sub(
+        r"^(?:what is|calculate|compute|solve|how much is)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE
+    ).strip()
+    if not re.match(r"^[\d\s\+\-\*\/\%\(\)\.\,\^]+$", cleaned) or not re.search(r"[\+\-\*\/\%\^]", cleaned):
+        return None
+    expr = cleaned.replace("^", "**").replace(",", "")
+    try:
+        tree = ast.parse(expr, mode='eval')
+
+        def _eval_node(node):
+            if isinstance(node, ast.Expression):
+                return _eval_node(node.body)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return node.value
+            elif isinstance(node, ast.BinOp):
+                left = _eval_node(node.left)
+                right = _eval_node(node.right)
+                op_type = type(node.op)
+                if op_type in SAFE_MATH_OPERATORS:
+                    return SAFE_MATH_OPERATORS[op_type](left, right)
+                raise ValueError("Unsupported op")
+            elif isinstance(node, ast.UnaryOp):
+                operand = _eval_node(node.operand)
+                op_type = type(node.op)
+                if op_type in SAFE_MATH_OPERATORS:
+                    return SAFE_MATH_OPERATORS[op_type](operand)
+                raise ValueError("Unsupported op")
+            else:
+                raise ValueError("Unsupported AST node")
+
+        val = _eval_node(tree)
+        if isinstance(val, float) and val.is_integer():
+            val = int(val)
+        return f"{cleaned} = **{val:,}**" if isinstance(val, int) else f"{cleaned} = **{val:,.4f}**".rstrip("0").rstrip(".")
+    except Exception:
+        return None
 
 
 class AgentState(TypedDict, total=False):
@@ -63,16 +122,17 @@ class SupervisorAgent:
     LangGraph-compatible Supervisor Orchestrator.
 
     Routing priorities (first match wins):
-    1. What-If  – before optimization ("what if we reduce…" contains "reduce")
-    2. Cost Optimization
-    3. Direct Financial Metrics  – after optimization ("how can we reduce total expenses?" must not hit metric)
-    4. Anomaly Detection
-    5. Forecasting
-    6. Subscription Analysis
-    7. Vendor Analysis
-    8. Budget Analysis
-    9. Document RAG
-    10. Safe default → TransactionAgent
+    1. Math calculation / General greeting / Help
+    2. What-If  – before optimization ("what if we reduce…" contains "reduce")
+    3. Cost Optimization
+    4. Direct Financial Metrics  – after optimization ("how can we reduce total expenses?" must not hit metric)
+    5. Anomaly Detection
+    6. Forecasting
+    7. Subscription Analysis
+    8. Vendor Analysis
+    9. Budget Analysis
+    10. Document RAG
+    11. Safe default → TransactionAgent
 
     Guarantees:
     - Financial metric queries never invoke Gemini for the authoritative number.
@@ -141,6 +201,12 @@ class SupervisorAgent:
         "compliance", "regulation", "uploaded document",
     ])
 
+    _GREETING_PHRASES = frozenset([
+        "hi", "hello", "hey", "help", "who are you", "what can you do",
+        "capabilities", "good morning", "good afternoon", "good evening",
+        "how does this work", "how do you work", "commands"
+    ])
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def __init__(self, db: Session, company_id: int, user_id: Optional[int] = None):
@@ -158,12 +224,82 @@ class SupervisorAgent:
     ) -> Dict[str, Any]:
         """Orchestrate multi-agent execution pipeline."""
         start_time = time.time()
-        p_lower = prompt.lower()
+        p_lower = prompt.lower().strip()
+
+        # ── 0. Handle Direct Math Calculations (e.g. 10+2) ───────────────────
+        math_result = _try_safe_math_eval(prompt)
+        if math_result is not None:
+            state: AgentState = {
+                "user_prompt": prompt,
+                "company_id": self.company_id,
+                "user_id": self.user_id,
+                "currency": self.currency_code,
+                "period_label": "all_time",
+                "selected_agents": ["SupervisorAgent"],
+                "executed_tools": ["compute_arithmetic_expression"],
+                "evidence_cards": [],
+                "suggested_actions": [],
+                "citations": [{
+                    "source": "Calculator Engine",
+                    "detail": "Deterministic precision arithmetic computation."
+                }],
+                "final_response": math_result,
+            }
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_agent_run(prompt, state, duration_ms)
+            return {
+                "message": state["final_response"],
+                "agents_involved": state["selected_agents"],
+                "tools_executed": state["executed_tools"],
+                "evidence_cards": [],
+                "suggested_actions": [],
+                "citations": state["citations"],
+            }
+
+        # ── 0b. Handle Direct Greetings & Help Inquiries ───────────────────────
+        if p_lower in self._GREETING_PHRASES or p_lower.strip("!?.").lower() in self._GREETING_PHRASES:
+            greeting_msg = (
+                "### 👋 Money Analysis AI Financial Controller\n\n"
+                "I am your automated AI finance controller. Here is what I can do:\n\n"
+                "- 📊 **Financial Metrics**: *\"What are our total expenses?\"*, *\"What is our net profit?\"*\n"
+                "- 💡 **Cost Optimization**: *\"How can we reduce SaaS and cloud spending?\"*\n"
+                "- 🔮 **What-If Simulations**: *\"What if Marketing spending decreases by 20%?\"*\n"
+                "- 🛡️ **Anomaly Detection**: *\"Find suspicious transactions\"*\n"
+                "- 📈 **Forecasting**: *\"Predict spending for the next 90 days\"*\n"
+                "- 📄 **Document AI**: *\"What is our procurement policy?\"*\n"
+                "- 🧮 **Calculations**: Direct math like *\"10+2\"* or *\"5000 * 12\"*."
+            )
+            state = {
+                "user_prompt": prompt,
+                "company_id": self.company_id,
+                "user_id": self.user_id,
+                "currency": self.currency_code,
+                "period_label": "all_time",
+                "selected_agents": ["SupervisorAgent"],
+                "executed_tools": [],
+                "evidence_cards": [],
+                "suggested_actions": [],
+                "citations": [{
+                    "source": "Assistant System",
+                    "detail": "Money Analysis Multi-Agent Finance Controller AI."
+                }],
+                "final_response": greeting_msg,
+            }
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_agent_run(prompt, state, duration_ms)
+            return {
+                "message": state["final_response"],
+                "agents_involved": state["selected_agents"],
+                "tools_executed": state["executed_tools"],
+                "evidence_cards": [],
+                "suggested_actions": [],
+                "citations": state["citations"],
+            }
 
         # Resolve time period from prompt
         start_date, end_date, period_label = self._resolve_period(p_lower)
 
-        state: AgentState = {
+        state = {
             "user_prompt": prompt,
             "company_id": self.company_id,
             "user_id": self.user_id,
@@ -528,7 +664,6 @@ class SupervisorAgent:
         Percentages (e.g. 15%) are explicitly NOT treated as monetary values.
         Numbers that are part of a percentage expression (NUMBER%) return None.
         """
-        # First, remove all percentage expressions so they are never mistaken for money.
         cleaned = re.sub(r"[0-9]+(?:\.[0-9]+)?\s*%", " ", prompt)
 
         pattern = re.compile(
@@ -541,7 +676,6 @@ class SupervisorAgent:
             return None
 
         try:
-            # Group 1+2 = currency-prefixed; Group 3+4 = number+multiplier (no prefix)
             if match.group(1) is not None:
                 raw = match.group(1).replace(",", "")
                 multiplier = (match.group(2) or "").lower()

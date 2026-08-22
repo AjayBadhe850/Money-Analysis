@@ -519,3 +519,25 @@ class TestCurrencySymbol:
     def test_gbp(self):   assert _currency_symbol("GBP") == "£"
     def test_unknown(self): assert _currency_symbol("XYZ") == "XYZ"
     def test_lowercase(self): assert _currency_symbol("inr") == "₹"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 10. MATH & GENERAL QUERY TESTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestMathAndGeneralQueries:
+    def test_simple_addition(self, db_session, test_company):
+        result = _run(db_session, test_company, "10+2")
+        assert "12" in result["message"]
+        assert result["agents_involved"] == ["SupervisorAgent"]
+
+    def test_multiplication_query(self, db_session, test_company):
+        result = _run(db_session, test_company, "What is 500 * 12?")
+        assert "6,000" in result["message"] or "6000" in result["message"]
+        assert result["agents_involved"] == ["SupervisorAgent"]
+
+    def test_greeting_query(self, db_session, test_company):
+        result = _run(db_session, test_company, "Hello")
+        assert "Money Analysis AI Financial Controller" in result["message"]
+        assert result["agents_involved"] == ["SupervisorAgent"]
+

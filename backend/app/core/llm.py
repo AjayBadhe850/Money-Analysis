@@ -1,10 +1,68 @@
 import logging
 import json
+import ast
+import operator
+import re
 from typing import Dict, Any, Optional
 import httpx
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+SAFE_MATH_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+def _try_math_eval(prompt: str) -> Optional[str]:
+    cleaned = prompt.strip().rstrip("?=").strip()
+    cleaned = re.sub(
+        r"^(?:what is|calculate|compute|solve|how much is)\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE
+    ).strip()
+    if not re.match(r"^[\d\s\+\-\*\/\%\(\)\.\,\^]+$", cleaned) or not re.search(r"[\+\-\*\/\%\^]", cleaned):
+        return None
+    expr = cleaned.replace("^", "**").replace(",", "")
+    try:
+        tree = ast.parse(expr, mode='eval')
+
+        def _eval_node(node):
+            if isinstance(node, ast.Expression):
+                return _eval_node(node.body)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return node.value
+            elif isinstance(node, ast.BinOp):
+                left = _eval_node(node.left)
+                right = _eval_node(node.right)
+                op_type = type(node.op)
+                if op_type in SAFE_MATH_OPERATORS:
+                    return SAFE_MATH_OPERATORS[op_type](left, right)
+                raise ValueError("Unsupported op")
+            elif isinstance(node, ast.UnaryOp):
+                operand = _eval_node(node.operand)
+                op_type = type(node.op)
+                if op_type in SAFE_MATH_OPERATORS:
+                    return SAFE_MATH_OPERATORS[op_type](operand)
+                raise ValueError("Unsupported op")
+            else:
+                raise ValueError("Unsupported AST node")
+
+        val = _eval_node(tree)
+        if isinstance(val, float) and val.is_integer():
+            val = int(val)
+        return f"{cleaned} = **{val:,}**" if isinstance(val, int) else f"{cleaned} = **{val:,.4f}**".rstrip("0").rstrip(".")
+    except Exception:
+        return None
 
 
 class LLMClient:
@@ -132,7 +190,28 @@ class LLMClient:
         This method must NEVER fabricate monetary amounts, percentages, or counts.
         All figures reported come exclusively from context_data passed by executed agents.
         """
-        p_lower = prompt.lower()
+        p_lower = prompt.lower().strip()
+
+        # ── 0. Direct Math Calculation (e.g. "10+2", "500 * 12") ──
+        math_res = _try_math_eval(prompt)
+        if math_res:
+            return math_res
+
+        # ── 0b. Direct Greeting / Help ──
+        greetings = {"hi", "hello", "hey", "help", "who are you", "what can you do", "capabilities"}
+        if p_lower in greetings or p_lower.strip("!?.").lower() in greetings:
+            return (
+                "### 👋 Money Analysis AI Financial Controller\n\n"
+                "I am your automated AI financial controller. I can assist you with:\n\n"
+                "- 📊 **Financial Metrics**: *\"What are our total expenses?\"*, *\"What is our net profit?\"*\n"
+                "- 💡 **Cost Optimization**: *\"How can we reduce SaaS and cloud spending?\"*\n"
+                "- 🔮 **What-If Simulations**: *\"What if Marketing spending decreases by 20%?\"*\n"
+                "- 🛡️ **Anomaly Detection**: *\"Find suspicious transactions\"*\n"
+                "- 📈 **Forecasting**: *\"Predict spending for the next 90 days\"*\n"
+                "- 📄 **Document AI**: *\"What is our procurement policy?\"*\n"
+                "- 🧮 **Calculations**: Direct math like *\"10+2\"* or *\"5000 * 12\"*."
+            )
+
         sym = "$"
         if context_data:
             code = context_data.get("currency_code", "USD")
@@ -280,12 +359,12 @@ class LLMClient:
             )
 
         # ── 10. Financial Metric Response (Transaction Summary) ──
-        if context_data and context_data.get("transaction_summary"):
-            ts = context_data["transaction_summary"]
-            total_exp = ts.get("total_expenses", 0)
-            total_rev = ts.get("total_revenue", 0)
-            net = ts.get("net_profit", 0)
-            tx_count = ts.get("total_transactions", 0)
+        if context_data and context_data.get("transaction_data"):
+            td = context_data["transaction_data"]
+            total_exp = td.get("total_expenses", 0)
+            total_rev = td.get("total_revenue", 0)
+            net = td.get("net_profit", 0)
+            tx_count = td.get("total_transactions", 0)
 
             if any(ph in p_lower for ph in [
                 "total expense", "total spending", "how much did we spend",
@@ -321,16 +400,14 @@ class LLMClient:
                 f"- **Total Revenue**: {sym}{total_rev:,.2f}\n"
                 f"- **Net Profit**: {sym}{net:,.2f}\n"
                 f"- **Total Transactions**: {tx_count}\n"
-                f"- **Monthly Burn Rate**: {sym}{ts.get('monthly_burn_rate', 0):,.2f}"
+                f"- **Monthly Burn Rate**: {sym}{td.get('monthly_burn_rate', 0):,.2f}"
             )
 
-        # ── Generic fallback – no data available ──
+        # ── Generic fallback ──
         return (
             "### Money Analysis Financial Controller\n\n"
             f"I reviewed available financial data for your query: *\"{prompt}\"*. "
-            "No verified financial figures are available for the selected time period. "
-            "Please ensure transactions are recorded and try again, "
-            "or use the Dashboard for real-time metrics."
+            "Please ask a specific question regarding expenses, revenue, savings, what-if scenarios, or forecast trends."
         )
 
 
