@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --font-serif: "Times New Roman", Times, Georgia, "Cambria", serif;
+  --font-heading: "Recoleta", "DM Serif Display", "Fraunces", "Times New Roman", Georgia, serif;
+  --font-body: "Berthold", "Berthold Akzidenz-Grotesk", "Akzidenz-Grotesk", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  
   --background: 220 30% 6%;
   --foreground: 210 20% 98%;
   --card: 222 35% 9%;
@@ -24,15 +26,22 @@
   --radius: 0.5rem;
 }
 
-*, *::before, *::after, html, body, input, button, select, textarea, h1, h2, h3, h4, h5, h6, p, span, div, a, label, table, th, td {
-  font-family: "Times New Roman", Times, Georgia, "Cambria", serif !important;
+/* Base Body & UI Components Typography (Berthold) */
+html, body, input, button, select, textarea, p, span, div, a, label, table, th, td, input::placeholder {
+  font-family: var(--font-body) !important;
+}
+
+/* Headings, Titles & Brand Elements (Recoleta) */
+h1, h2, h3, h4, h5, h6, .font-heading, .brand-title, .card-title {
+  font-family: var(--font-heading) !important;
+  letter-spacing: -0.015em;
 }
 
 body {
   background: radial-gradient(circle at 50% 0%, #0d1527 0%, #050914 75%, #02040a 100%);
   background-color: #050914;
   color: #f1f5f9;
-  font-family: "Times New Roman", Times, Georgia, "Cambria", serif !important;
+  font-family: var(--font-body) !important;
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
