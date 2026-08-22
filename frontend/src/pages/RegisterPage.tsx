@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, ArrowRight } from 'lucide-react';
+import { Sparkles, ArrowRight, User, Mail, Building, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { authService } from '../services/auth.service';
 import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
 
 export const RegisterPage: React.FC = () => {
   const { login } = useAuth();
@@ -44,54 +42,91 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen w-full relative flex items-center justify-center p-4 sm:p-6 md:p-8 bg-slate-900 overflow-hidden select-none">
+      {/* Background Graphic */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0"
+        style={{ backgroundImage: `url('/login-bg.png')` }}
+      />
 
-      <div className="flex items-center gap-3 mb-6 z-10">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-cyan-400 flex items-center justify-center shadow-xl shadow-indigo-500/20">
-          <Sparkles className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            Money Analysis <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">AI</span>
-          </h1>
-          <p className="text-xs text-slate-400">Multi-Agent Finance Controller</p>
-        </div>
-      </div>
+      {/* Subtle glass overlay */}
+      <div className="absolute inset-0 bg-slate-950/10 backdrop-blur-[2px] z-0" />
 
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/90 backdrop-blur-xl shadow-2xl z-10">
-        <CardHeader className="space-y-1 text-center pb-4">
-          <CardTitle className="text-xl font-bold text-slate-100">Create your workspace</CardTitle>
-          <CardDescription className="text-xs text-slate-400">
-            Set up your organization for autonomous financial governance
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Main Container */}
+      <div className="relative z-10 w-full max-w-[400px] my-auto lg:translate-x-24 xl:translate-x-28 transition-transform duration-300">
+        <div className="rounded-3xl border border-white/80 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl shadow-[0_20px_60px_-15px_rgba(2,132,199,0.18)] p-6 sm:p-7 transition-all duration-300">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 text-white shadow-lg shadow-indigo-500/25 mb-3">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+              Create Organization
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Autonomous Financial Controller Workspace
+            </p>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-3.5">
-            <Input
-              label="Full Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Eleanor Vance"
-              required
-            />
-            <Input
-              label="Work Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="eleanor@company.com"
-              required
-            />
-            <Input
-              label="Company Name"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Acme Technologies Inc."
-              required
-            />
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Full Name
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                  <User className="w-4 h-4" />
+                </div>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Eleanor Vance"
+                  required
+                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Work Email
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="eleanor@company.com"
+                  required
+                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Company Name
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                  <Building className="w-4 h-4" />
+                </div>
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Acme Technologies Inc."
+                  required
+                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
             <Select
-              label="User Role"
+              label="Primary Role"
               value={role}
               onChange={(e) => setRole(e.target.value)}
               options={[
@@ -102,31 +137,48 @@ export const RegisterPage: React.FC = () => {
                 { label: 'Auditor (Read-Only Governance)', value: 'Auditor' },
               ]}
             />
-            <Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Minimum 8 characters"
-              required
-            />
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Password
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Minimum 8 characters"
+                  required
+                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
             <Button
               type="submit"
-              className="w-full mt-2"
               isLoading={isLoading}
+              className="w-full h-11 mt-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 border-0"
               rightIcon={<ArrowRight className="w-4 h-4" />}
             >
-              Get Started
+              Get Started Now
             </Button>
           </form>
-        </CardContent>
-        <CardFooter className="flex justify-center border-t border-slate-800/80 pt-4 text-xs text-slate-400">
-          Already have an account?{' '}
-          <Link to="/login" className="text-indigo-400 hover:text-indigo-300 font-medium ml-1">
-            Sign In
-          </Link>
-        </CardFooter>
-      </Card>
+
+          <div className="mt-5 pt-4 border-t border-slate-200/80 dark:border-slate-800/80 text-center text-xs text-slate-500 dark:text-slate-400">
+            Already have an account?{' '}
+            <Link
+              to="/login"
+              className="text-blue-600 dark:text-indigo-400 hover:text-blue-700 dark:hover:text-indigo-300 font-semibold transition-colors"
+            >
+              Sign In
+            </Link>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
+

@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Shield, ArrowRight } from 'lucide-react';
+import { Sparkles, Shield, ArrowRight, Lock, Mail, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { authService } from '../services/auth.service';
 import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
@@ -20,7 +18,7 @@ export const LoginPage: React.FC = () => {
   const demoAccounts = [
     { label: 'Admin', email: 'admin@moneyanalysis.ai', role: 'Admin' },
     { label: 'Finance Mgr', email: 'finance@moneyanalysis.ai', role: 'Finance Manager' },
-    { label: 'Dept Mgr', email: 'engineering.lead@moneyanalysis.ai', role: 'Department Manager' },
+    { label: 'Dept Lead', email: 'engineering.lead@moneyanalysis.ai', role: 'Dept Lead' },
     { label: 'Employee', email: 'employee@moneyanalysis.ai', role: 'Employee' },
     { label: 'Auditor', email: 'auditor@moneyanalysis.ai', role: 'Auditor' },
   ];
@@ -47,89 +45,138 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Ambient background glows */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen w-full relative flex items-center justify-center p-4 sm:p-6 md:p-8 bg-[#f8faff] overflow-hidden select-none">
+      {/* Background Graphic - High Res Cover */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0"
+        style={{ backgroundImage: `url('/login-bg.png')` }}
+      />
 
-      {/* Brand logo */}
-      <div className="flex items-center gap-3 mb-6 z-10">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-cyan-400 flex items-center justify-center shadow-xl shadow-indigo-500/20">
-          <Sparkles className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            Money Analysis <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">AI</span>
-          </h1>
-          <p className="text-xs text-slate-400">Multi-Agent Finance Controller</p>
-        </div>
-      </div>
-
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/90 backdrop-blur-xl shadow-2xl z-10">
-        <CardHeader className="space-y-1 text-center pb-6">
-          <CardTitle className="text-xl font-bold text-slate-100">Sign in to your account</CardTitle>
-          <CardDescription className="text-xs text-slate-400">
-            Enter your enterprise credentials or choose a demo role below
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* Demo account quick fill buttons */}
-          <div className="mb-6 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-indigo-400 uppercase tracking-wider mb-2.5">
-              <Shield className="w-3 h-3" /> Quick Demo Role Selector
+      {/* Main Container */}
+      <div className="relative z-10 w-full max-w-[380px] my-auto">
+        {/* Glassmorphism Authentication Card */}
+        <div
+          className="rounded-3xl border border-white/90 bg-white/75 dark:bg-slate-900/80 shadow-[0_20px_60px_-15px_rgba(2,132,199,0.22)] p-6 sm:p-7 transition-all duration-300"
+          style={{
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+          }}
+        >
+          {/* Header */}
+          <div className="text-center mb-5">
+            <div className="inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 text-white shadow-lg shadow-blue-500/25 mb-2.5">
+              <Sparkles className="w-5 h-5" />
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {demoAccounts.map((d) => (
-                <button
-                  key={d.email}
-                  type="button"
-                  onClick={() => handleQuickLogin(d.email)}
-                  className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all text-center ${
-                    email === d.email
-                      ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300 font-semibold'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
+            <h2 className="!font-sans text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+              Sign In
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Autonomous Financial Intelligence Platform
+            </p>
+          </div>
+
+          {/* Quick Demo Role Selector */}
+          <div className="mb-5 p-2.5 rounded-2xl bg-slate-50/85 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80">
+            <div className="flex items-center justify-between text-[10px] font-semibold text-slate-600 dark:text-indigo-300 uppercase tracking-wider mb-2 px-1">
+              <span className="flex items-center gap-1.5 font-sans">
+                <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-indigo-400" />
+                Quick Demo Roles
+              </span>
+              <span className="text-[10px] lowercase text-slate-400">1-click autofill</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {demoAccounts.map((d) => {
+                const isSelected = email === d.email;
+                return (
+                  <button
+                    key={d.email}
+                    type="button"
+                    onClick={() => handleQuickLogin(d.email)}
+                    className={`px-1.5 py-1.5 rounded-xl text-[11px] font-medium border transition-all text-center flex items-center justify-center gap-1 font-sans cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20 font-semibold'
+                        : 'bg-white/90 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    {isSelected && <CheckCircle2 className="w-3 h-3 shrink-0" />}
+                    <span className="truncate">{d.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Email Address"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.com"
-              required
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            <div className="space-y-1">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 font-sans">
+                Work Email
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3 text-slate-400 pointer-events-none">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  required
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-950/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-sm font-sans"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 font-sans">
+                Password
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3 text-slate-400 pointer-events-none">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-950/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-sm font-sans"
+                />
+              </div>
+            </div>
+
             <Button
               type="submit"
-              className="w-full mt-2"
               isLoading={isLoading}
+              className="w-full h-10 mt-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/25 border-0 font-sans cursor-pointer"
               rightIcon={<ArrowRight className="w-4 h-4" />}
             >
-              Sign In
+              Sign In to Controller
             </Button>
           </form>
-        </CardContent>
-        <CardFooter className="flex justify-center border-t border-slate-800/80 pt-4 text-xs text-slate-400">
-          Don't have an account?{' '}
-          <Link to="/register" className="text-indigo-400 hover:text-indigo-300 font-medium ml-1">
-            Register company
-          </Link>
-        </CardFooter>
-      </Card>
+
+          {/* Footer */}
+          <div className="mt-5 pt-3.5 border-t border-slate-200/80 dark:border-slate-800/80 text-center text-xs text-slate-500 dark:text-slate-400 font-sans">
+            Need an enterprise account?{' '}
+            <Link
+              to="/register"
+              className="text-blue-600 dark:text-indigo-400 hover:text-blue-700 dark:hover:text-indigo-300 font-semibold transition-colors ml-1"
+            >
+              Register organization
+            </Link>
+          </div>
+        </div>
+
+        {/* Bottom assurance */}
+        <div className="mt-3 text-center">
+          <p className="text-[11px] text-slate-500 font-medium font-sans">
+            SOC2 Type II Certified • 256-bit AES Encryption
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
+
+

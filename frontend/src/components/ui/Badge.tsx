@@ -14,26 +14,26 @@ export const Badge: React.FC<BadgeProps> = ({
   ...props
 }) => {
   const variants = {
-    default: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-    secondary: 'bg-slate-800 text-slate-300 border-slate-700',
-    success: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    warning: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    destructive: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
-    outline: 'bg-transparent text-slate-300 border-slate-700',
-    purple: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    default: 'bg-blue-50 text-blue-700 border-blue-200/80 font-semibold',
+    secondary: 'bg-slate-100 text-slate-700 border-slate-200 font-medium',
+    success: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 font-semibold',
+    warning: 'bg-amber-50 text-amber-700 border-amber-200/80 font-semibold',
+    destructive: 'bg-rose-50 text-rose-700 border-rose-200/80 font-semibold',
+    outline: 'bg-white text-slate-700 border-slate-200 font-medium shadow-sm',
+    purple: 'bg-purple-50 text-purple-700 border-purple-200/80 font-semibold',
+    cyan: 'bg-cyan-50 text-cyan-700 border-cyan-200/80 font-semibold',
   };
 
   const sizes = {
-    sm: 'px-2 py-0.5 text-[10px] font-medium',
-    md: 'px-2.5 py-1 text-xs font-medium',
+    sm: 'px-2 py-0.5 text-[10px]',
+    md: 'px-2.5 py-1 text-xs',
   };
 
   return (
     <div
       className={twMerge(
         clsx(
-          'inline-flex items-center gap-1 rounded-full border transition-colors',
+          'inline-flex items-center gap-1 rounded-full border transition-colors font-sans select-none',
           variants[variant],
           sizes[size],
           className
@@ -43,3 +43,4 @@ export const Badge: React.FC<BadgeProps> = ({
     />
   );
 };
+

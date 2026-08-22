@@ -18,11 +18,11 @@ export const Progress: React.FC<ProgressProps> = ({
   const clampedValue = Math.min(100, Math.max(0, value));
 
   const variants = {
-    default: 'bg-indigo-500',
+    default: 'bg-blue-600',
     emerald: 'bg-emerald-500',
     amber: 'bg-amber-500',
     rose: 'bg-rose-500',
-    gradient: 'bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500',
+    gradient: 'bg-gradient-to-r from-blue-600 via-cyan-400 to-emerald-400',
   };
 
   const sizes = {
@@ -32,7 +32,7 @@ export const Progress: React.FC<ProgressProps> = ({
   };
 
   return (
-    <div className={twMerge('w-full rounded-full bg-slate-800/80 overflow-hidden', sizes[size], className)}>
+    <div className={twMerge('w-full rounded-full bg-slate-100 overflow-hidden', sizes[size], className)}>
       <div
         className={twMerge('h-full transition-all duration-500 rounded-full', variants[variant])}
         style={{ width: `${clampedValue}%` }}
@@ -40,3 +40,4 @@ export const Progress: React.FC<ProgressProps> = ({
     </div>
   );
 };
+

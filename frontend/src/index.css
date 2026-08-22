@@ -1,53 +1,56 @@
 @import "tailwindcss";
 
 :root {
-  --font-heading: "Recoleta", "DM Serif Display", "Fraunces", "Times New Roman", Georgia, serif;
-  --font-body: "Berthold", "Berthold Akzidenz-Grotesk", "Akzidenz-Grotesk", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Inter", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   
-  --background: 220 30% 6%;
-  --foreground: 210 20% 98%;
-  --card: 222 35% 9%;
-  --card-foreground: 210 20% 98%;
-  --popover: 222 35% 9%;
-  --popover-foreground: 210 20% 98%;
-  --primary: 43 74% 53%; /* Executive Gold */
-  --primary-foreground: 222 47% 11%;
-  --secondary: 222 25% 15%;
-  --secondary-foreground: 210 20% 90%;
-  --muted: 222 25% 14%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 43 74% 53%;
-  --accent-foreground: 222 47% 11%;
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 217 91% 60%; /* Poster Blue #2563eb */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 199 89% 48%; /* Poster Cyan #0ea5e9 */
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 60%;
-  --destructive-foreground: 210 20% 98%;
-  --border: 222 25% 18%;
-  --input: 222 25% 18%;
-  --ring: 43 74% 53%;
-  --radius: 0.5rem;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 217 91% 60%;
+  --radius: 1rem;
 }
 
-/* Base Body & UI Components Typography (Berthold) */
+/* Base Body & UI Components Typography */
 html, body, input, button, select, textarea, p, span, div, a, label, table, th, td, input::placeholder {
   font-family: var(--font-body) !important;
 }
 
-/* Headings, Titles & Brand Elements (Recoleta) */
+/* Headings, Titles & Brand Elements */
 h1, h2, h3, h4, h5, h6, .font-heading, .brand-title, .card-title {
   font-family: var(--font-heading) !important;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
+  color: #0f172a;
 }
 
 body {
-  background: radial-gradient(circle at 50% 0%, #0d1527 0%, #050914 75%, #02040a 100%);
-  background-color: #050914;
-  color: #f1f5f9;
+  background: radial-gradient(at 100% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
+              radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+              #f8fafc;
+  background-color: #f8fafc;
+  color: #0f172a;
   font-family: var(--font-body) !important;
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom executive scrollbar */
+/* Custom light executive scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -58,36 +61,79 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(212, 175, 55, 0.25);
+  background: rgba(148, 163, 184, 0.4);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(212, 175, 55, 0.45);
+  background: rgba(100, 116, 139, 0.6);
 }
 
-/* Executive Financial Glassmorphic Effects */
+/* Poster Light Glassmorphic Effects */
 .glass-panel {
-  background: rgba(11, 18, 32, 0.82);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(212, 175, 55, 0.16);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 10px 30px -5px rgba(0, 50, 150, 0.05), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
 }
 
 .glass-card {
-  background: linear-gradient(135deg, rgba(16, 26, 46, 0.85) 0%, rgba(8, 14, 25, 0.95) 100%);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(212, 175, 55, 0.18);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 10px 30px -5px rgba(0, 50, 150, 0.05), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
 }
 
-/* Card hover glow with refined gold/amber aura */
+/* Card hover glow with poster cyan aura */
 .hover-glow {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .hover-glow:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 24px -10px rgba(212, 175, 55, 0.3);
-  border-color: rgba(212, 175, 55, 0.5);
+  box-shadow: 0 16px 36px -8px rgba(14, 165, 233, 0.18);
+  border-color: rgba(14, 165, 233, 0.5);
 }
+
+/* Global Light Theme Overrides for Consistent Poster Aesthetic */
+.bg-slate-950, .bg-slate-900 {
+  background-color: #ffffff;
+}
+
+.bg-slate-950\/80, .bg-slate-950\/60, .bg-slate-900\/90, .bg-slate-900\/80, .bg-slate-900\/70, .bg-slate-900\/60 {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+.bg-slate-950\/40, .bg-slate-900\/40, .bg-slate-900\/30 {
+  background-color: rgba(248, 250, 252, 0.85);
+}
+
+.border-slate-800, .border-slate-700, .border-slate-800\/80, .border-slate-800\/60 {
+  border-color: #e2e8f0;
+}
+
+.divide-slate-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #f1f5f9;
+}
+
+/* Table Light Styles */
+thead th {
+  background-color: #f8fafc;
+  color: #64748b;
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Ensure vibrant colored badges & buttons keep their white text */
+button.text-white, .text-white-force, [class*="bg-blue-600"].text-white, [class*="bg-gradient-to-r"].text-white {
+  color: #ffffff !important;
+}
+
+
