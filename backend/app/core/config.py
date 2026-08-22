@@ -60,7 +60,11 @@ class Settings(BaseSettings):
         "*"
     ]
 
-    model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="allow")
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=(".env", "backend/.env", "../backend/.env"),
+        extra="allow",
+    )
 
 
 settings = Settings()
