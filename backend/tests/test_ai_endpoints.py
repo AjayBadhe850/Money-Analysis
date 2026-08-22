@@ -1,7 +1,9 @@
 import pytest
+from unittest.mock import patch, AsyncMock
 from app.auth.jwt import create_access_token
 from app.models.user import User, UserRole
 from app.auth.hashing import hash_password
+from app.core.llm import LLMClient
 
 
 @pytest.fixture
@@ -125,3 +127,24 @@ def test_ai_cost_efficiency_score(client, auth_headers):
     assert "overall_score" in data
     assert 0 <= data["overall_score"] <= 100
     assert "components" in data
+
+
+@pytest.mark.asyncio
+async def test_llm_client_with_context():
+    client = LLMClient()
+    # Test fallback with context data
+    res = await client.generate_response(
+        prompt="How can we optimize costs?",
+        context_data={
+            "savings_summary": {
+                "total_potential_monthly": 4500.0,
+                "total_potential_annual": 54000.0,
+                "opportunities_count": 2,
+                "top_opportunities": [
+                    {"title": "Cancel Unused SaaS", "estimated_monthly_saving": 2500.0, "risk_level": "LOW"}
+                ]
+            }
+        }
+    )
+    assert "4,500.00" in res or "4500" in res
+    assert "Cancel Unused SaaS" in res

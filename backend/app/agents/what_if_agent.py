@@ -5,8 +5,16 @@ from app.models.transaction import Transaction, TransactionType
 from app.models.department import Department
 from app.models.vendor import Vendor
 from app.models.subscription import Subscription
+from app.models.company import Company
 
 logger = logging.getLogger(__name__)
+
+
+def _currency_symbol(code: str) -> str:
+    return {
+        "USD": "$", "INR": "₹", "EUR": "€", "GBP": "£",
+        "JPY": "¥", "AUD": "A$", "CAD": "C$"
+    }.get(code.upper(), code)
 
 
 class WhatIfSimulationAgent:
@@ -18,6 +26,9 @@ class WhatIfSimulationAgent:
     def __init__(self, db: Session, company_id: int):
         self.db = db
         self.company_id = company_id
+        company = db.query(Company).filter(Company.id == company_id).first()
+        self.currency_code = (company.currency or "USD") if company else "USD"
+        self.currency_sym = _currency_symbol(self.currency_code)
 
     def simulate(
         self,
@@ -32,6 +43,7 @@ class WhatIfSimulationAgent:
         dept_adj = department_spend_adjustments or {}
         vend_adj = vendor_price_adjustments or {}
         rev_adj = revenue_growth_adjustment or 0.0
+        sym = self.currency_sym
 
         # Fetch baseline data
         txs = self.db.query(Transaction).filter(Transaction.company_id == self.company_id).all()
@@ -39,18 +51,20 @@ class WhatIfSimulationAgent:
         vend_map = {v.id: v.name for v in self.db.query(Vendor).filter(Vendor.company_id == self.company_id).all()}
         subs = self.db.query(Subscription).filter(Subscription.company_id == self.company_id).all()
 
-        baseline_monthly_expense = 0.0
-        baseline_monthly_revenue = 0.0
-        simulated_monthly_expense = 0.0
-
-        # Calculate baseline monthly from all transactions (assuming 6-month historical baseline)
         exp_txs = [t for t in txs if t.transaction_type == TransactionType.EXPENSE]
         rev_txs = [t for t in txs if t.transaction_type == TransactionType.REVENUE]
 
+        # Calculate number of distinct months in dataset for realistic monthly baseline
+        distinct_months = set()
+        for t in txs:
+            if t.transaction_date:
+                distinct_months.add(str(t.transaction_date)[:7])
+        num_months = max(1, len(distinct_months))
+
         total_exp = sum(float(t.amount) for t in exp_txs)
         total_rev = sum(float(t.amount) for t in rev_txs)
-        baseline_monthly_expense = total_exp / 6.0 if total_exp > 0 else 100000.0
-        baseline_monthly_revenue = total_rev / 6.0 if total_rev > 0 else 300000.0
+        baseline_monthly_expense = total_exp / num_months if total_exp > 0 else 0.0
+        baseline_monthly_revenue = total_rev / num_months if total_rev > 0 else 0.0
 
         # Detailed breakdown impacts
         detailed_impacts = []
@@ -59,7 +73,7 @@ class WhatIfSimulationAgent:
         dept_spends = {}
         for t in exp_txs:
             d_name = dept_map.get(t.department_id, "General Operations")
-            dept_spends[d_name] = dept_spends.get(d_name, 0.0) + (float(t.amount) / 6.0)
+            dept_spends[d_name] = dept_spends.get(d_name, 0.0) + (float(t.amount) / num_months)
 
         sim_dept_total = 0.0
         for d_name, baseline_d_spend in dept_spends.items():
@@ -85,7 +99,7 @@ class WhatIfSimulationAgent:
         vend_spends = {}
         for t in exp_txs:
             v_name = vend_map.get(t.vendor_id, "General Supplier")
-            vend_spends[v_name] = vend_spends.get(v_name, 0.0) + (float(t.amount) / 6.0)
+            vend_spends[v_name] = vend_spends.get(v_name, 0.0) + (float(t.amount) / num_months)
 
         for v_name, baseline_v_spend in vend_spends.items():
             for adj_name, adj_val in vend_adj.items():
@@ -135,11 +149,11 @@ class WhatIfSimulationAgent:
         margin_change = simulated_margin - baseline_margin
 
         narrative = (
-            f"Scenario simulation indicates that applying the defined adjustments yields a net monthly expenditure of "
-            f"${simulated_monthly_expense:,.2f} vs baseline ${baseline_monthly_expense:,.2f} "
-            f"({'saving $' + f'{monthly_savings:,.2f}' if monthly_savings > 0 else 'increasing $' + f'{-monthly_savings:,.2f}'} / month, "
-            f"or {'$' + f'{annual_savings:,.2f}' if annual_savings > 0 else '-$' + f'{-annual_savings:,.2f}'} annually). "
-            f"Operating profit margin shifts from {baseline_margin:.1f}% to {simulated_margin:.1f}% ({'+' if margin_change > 0 else ''}{margin_change:.1f}%)."
+            f"Scenario simulation indicates applying the adjustments yields monthly expenditure of "
+            f"{sym}{simulated_monthly_expense:,.2f} vs baseline {sym}{baseline_monthly_expense:,.2f} "
+            f"({'saving ' + sym if monthly_savings >= 0 else 'increasing ' + sym}{abs(monthly_savings):,.2f}/mo, "
+            f"or {'saving ' + sym if annual_savings >= 0 else 'increasing ' + sym}{abs(annual_savings):,.2f} annually). "
+            f"Operating profit margin shifts from {baseline_margin:.1f}% to {simulated_margin:.1f}% ({'+' if margin_change >= 0 else ''}{margin_change:.1f}%)."
         )
 
         return {

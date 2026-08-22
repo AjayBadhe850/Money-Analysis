@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 import numpy as np
@@ -101,19 +102,41 @@ class FinanceRAGService:
             context_blocks.append(f"[{fname} - Section {r.chunk_index}]:\n{r.chunk_text}")
 
         context_str = "\n\n---\n\n".join(context_blocks)
-        prompt = (
-            f"You are the Money Analysis Finance Document Copilot.\n"
-            f"Answer the user query strictly using the following corporate financial document excerpts:\n\n"
-            f"{context_str}\n\n"
-            f"User Question: {query_text}\n"
-            f"Provide a clear, accurate, fact-based response with citations to document filenames."
+        system_instruction = (
+            "You are the Money Analysis Finance Document Copilot.\n"
+            "Answer the user query strictly using the corporate financial document excerpts provided in context.\n"
+            "Provide a clear, accurate, fact-based response with citations to document filenames."
         )
 
-        answer = llm_client._generate_intelligent_fallback(
-            prompt=query_text,
-            system_instruction=prompt,
-            context_data={"rag_context": context_str}
-        )
+        try:
+            # Run LLM generation synchronously if loop is already running or start one
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                answer = loop.run_until_complete(
+                    llm_client.generate_response(
+                        prompt=query_text,
+                        system_instruction=system_instruction,
+                        context_data={"rag_context": context_str, "retrieved_chunks": retrieved_chunks}
+                    )
+                )
+            except Exception:
+                answer = asyncio.run(
+                    llm_client.generate_response(
+                        prompt=query_text,
+                        system_instruction=system_instruction,
+                        context_data={"rag_context": context_str, "retrieved_chunks": retrieved_chunks}
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"RAG LLM synthesis error: {e}. Using deterministic chunk presentation.")
+            chunk_summary = "\n\n".join(
+                f"• **{c['filename']}** (Match Score: {int(c['similarity_score']*100)}%):\n{c['chunk_text']}"
+                for c in retrieved_chunks[:3]
+            )
+            answer = f"### Document Findings\n\nBased on your indexed documents regarding *\"{query_text}\"*:\n\n{chunk_summary}"
 
         return {
             "query": query_text,
