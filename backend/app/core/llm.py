@@ -112,11 +112,15 @@ class LLMClient:
         context_data: Optional[Dict[str, Any]] = None
     ) -> str:
         api_key = (self.gemini_key or "").strip()
-        model_name = (self.model or "gemini-1.5-flash").strip()
-        if model_name.startswith("models/"):
-            model_name = model_name[len("models/"):]
+        configured_model = (self.model or "gemini-3.5-flash").strip()
+        if configured_model.startswith("models/"):
+            configured_model = configured_model[len("models/"):]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        # List of candidate models in order of preference
+        candidate_models = [configured_model]
+        for fallback_m in ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-1.5-flash"]:
+            if fallback_m not in candidate_models:
+                candidate_models.append(fallback_m)
 
         # Construct prompt incorporating context data
         full_user_prompt = prompt
@@ -124,47 +128,45 @@ class LLMClient:
             context_json = json.dumps(context_data, indent=2, default=str)
             full_user_prompt = f"Verified Financial Context Data:\n```json\n{context_json}\n```\n\nUser Question / Task:\n{prompt}"
 
-        payload: Dict[str, Any] = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": full_user_prompt}]
-                }
-            ],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": 2048
-            }
-        }
-
-        if system_instruction:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_instruction}]
-            }
-
+        last_error = None
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code != 200:
-                logger.warning(
-                    f"Gemini API returned status {resp.status_code}: {resp.text}. Retrying with combined prompt..."
-                )
-                combined = f"System Instruction:\n{system_instruction}\n\n{full_user_prompt}" if system_instruction else full_user_prompt
-                retry_payload = {
-                    "contents": [{"role": "user", "parts": [{"text": combined}]}],
+            for model_name in candidate_models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+
+                payload: Dict[str, Any] = {
+                    "contents": [{"role": "user", "parts": [{"text": full_user_prompt}]}],
                     "generationConfig": {"temperature": temperature, "maxOutputTokens": 2048}
                 }
-                resp = await client.post(url, json=retry_payload)
-                if resp.status_code != 200:
-                    logger.error(f"Gemini API retry failed: {resp.status_code} - {resp.text}")
-                    resp.raise_for_status()
+                if system_instruction:
+                    payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if candidates and "content" in candidates[0] and "parts" in candidates[0]["content"]:
-                parts = candidates[0]["content"]["parts"]
-                if parts and "text" in parts[0]:
-                    return parts[0]["text"]
-            raise ValueError(f"No text content returned from Gemini API: {data}")
+                try:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code != 200:
+                        logger.warning(
+                            f"Gemini API ({model_name}) returned {resp.status_code}. Retrying with combined prompt..."
+                        )
+                        combined = f"System Instruction:\n{system_instruction}\n\n{full_user_prompt}" if system_instruction else full_user_prompt
+                        retry_payload = {
+                            "contents": [{"role": "user", "parts": [{"text": combined}]}],
+                            "generationConfig": {"temperature": temperature, "maxOutputTokens": 2048}
+                        }
+                        resp = await client.post(url, json=retry_payload)
+
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        candidates = data.get("candidates", [])
+                        if candidates and "content" in candidates[0] and "parts" in candidates[0]["content"]:
+                            parts = candidates[0]["content"]["parts"]
+                            if parts and "text" in parts[0]:
+                                return parts[0]["text"]
+                    else:
+                        last_error = f"Status {resp.status_code}: {resp.text}"
+                except Exception as exc:
+                    last_error = str(exc)
+                    continue
+
+        raise ValueError(f"All Gemini models failed. Last error: {last_error}")
 
     async def _call_openai(
         self,

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "gemini"  # "gemini", "openai", "mock"
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
-    LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_MODEL: str = "gemini-3.5-flash"
 
     # Cloudinary / S3 File Storage
     STORAGE_PROVIDER: str = "local"  # "cloudinary", "s3", "local"
