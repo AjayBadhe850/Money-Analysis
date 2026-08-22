@@ -341,4 +341,4 @@ npm run build
 - **Background Tasks & Queue**: Redis 7, Celery 5.6 with Celery Beat periodic scheduler.
 - **Database & Storage**: PostgreSQL 16 with `pgvector`, Supabase, Cloudinary / AWS S3.
 - **Observability & Security**: Sentry, Structured JSON Logging, JWT HS256, BCrypt, RBAC, Anti-IDOR Tenant Guard.
-- **Deployment**: Vercel (Frontend), Render (Backend & Worker), GitHub Actions (CI/CD).
+- **Deployment**: Netlify (Frontend), Render (Backend & Worker), GitHub Actions (CI/CD).
