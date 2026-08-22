@@ -111,11 +111,12 @@ class LLMClient:
         temperature: float,
         context_data: Optional[Dict[str, Any]] = None
     ) -> str:
-        model_name = self.model.strip()
+        api_key = (self.gemini_key or "").strip()
+        model_name = (self.model or "gemini-1.5-flash").strip()
         if model_name.startswith("models/"):
             model_name = model_name[len("models/"):]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         # Construct prompt incorporating context data
         full_user_prompt = prompt
@@ -143,14 +144,27 @@ class LLMClient:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, json=payload)
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                logger.warning(
+                    f"Gemini API returned status {resp.status_code}: {resp.text}. Retrying with combined prompt..."
+                )
+                combined = f"System Instruction:\n{system_instruction}\n\n{full_user_prompt}" if system_instruction else full_user_prompt
+                retry_payload = {
+                    "contents": [{"role": "user", "parts": [{"text": combined}]}],
+                    "generationConfig": {"temperature": temperature, "maxOutputTokens": 2048}
+                }
+                resp = await client.post(url, json=retry_payload)
+                if resp.status_code != 200:
+                    logger.error(f"Gemini API retry failed: {resp.status_code} - {resp.text}")
+                    resp.raise_for_status()
+
             data = resp.json()
             candidates = data.get("candidates", [])
             if candidates and "content" in candidates[0] and "parts" in candidates[0]["content"]:
                 parts = candidates[0]["content"]["parts"]
                 if parts and "text" in parts[0]:
                     return parts[0]["text"]
-            raise ValueError("No text content returned from Gemini API")
+            raise ValueError(f"No text content returned from Gemini API: {data}")
 
     async def _call_openai(
         self,
